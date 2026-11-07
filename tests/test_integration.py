@@ -65,7 +65,7 @@ async def test_device_and_entities(hass: HomeAssistant, gateway) -> None:
     switches = [e for e in entities if e.domain == "switch"]
     sensors = [e for e in entities if e.domain == "sensor"]
     assert len(switches) == 12
-    assert len(sensors) == 12 + 2      # Timer + Laufzeit, CRC (v1.07 ohne Diagnose)
+    assert len(sensors) == 2           # Laufzeit, CRC (v1.07 ohne Diagnose)
     assert hass.states.get("switch.arduinohbwtest_kanal_1").state == "off"
     assert hass.states.get("sensor.arduinohbwtest_laufzeit") is not None
 
@@ -90,7 +90,7 @@ async def test_switching(hass: HomeAssistant, gateway) -> None:
     await hass.async_block_till_done()
     assert mod.writes[-1] == (6, 21, 300)
     assert hass.states.get("switch.arduinohbwtest_kanal_2").state == "on"
-    assert hass.states.get("sensor.arduinohbwtest_timer_kanal_2").state == "300"
+    assert hass.states.get("switch.arduinohbwtest_kanal_2").attributes["timer_remaining"] == 300
 
 
 async def test_foreign_responses_ignored(hass: HomeAssistant, gateway) -> None:

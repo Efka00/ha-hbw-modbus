@@ -27,9 +27,6 @@
       }
     },
     "sensor": {
-      "timer": {
-        "name": "Timer channel {channel}"
-      },
       "uptime": {
         "name": "Uptime"
       },

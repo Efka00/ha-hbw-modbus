@@ -33,8 +33,7 @@ sich eine Verbindung.
 
 | Entität | Inhalt |
 |---|---|
-| Schalter „Kanal n“ | Relais schalten. `switch.toggle` schaltet im Modul selbst um |
-| Sensor „Timer Kanal n“ | Restzeit des Ausschalt-Timers in s (0 = kein Timer) |
+| Schalter „Kanal n“ | Relais schalten. `switch.toggle` schaltet im Modul selbst um. Attribut `timer_remaining`: Restzeit des Ausschalt-Timers in s (0 = kein Timer) |
 | Diagnose | Laufzeit, CRC-Fehler; ab Firmware v1.08 zusätzlich Neustart-Grund, Watchdog-Neustarts, Starts, Betriebsspannung |
 
 Die beiden Kanäle eines am Modul eingerichteten Rollladens werden nicht als

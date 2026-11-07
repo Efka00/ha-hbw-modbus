@@ -1,4 +1,4 @@
-"""Timer-Restzeiten und Diagnosewerte."""
+"""Diagnosewerte eines Moduls."""
 
 from __future__ import annotations
 
@@ -100,18 +100,11 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: HbwConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data.coordinator
-    entities: list[SensorEntity] = [
+    async_add_entities(
         HbwSensor(coordinator, desc)
         for desc in DIAG_SENSORS
         if coordinator.info.has_diag or not desc.needs_diag
-    ]
-    locked = coordinator.data.lock_mask
-    entities += [
-        HbwTimerSensor(coordinator, ch)
-        for ch in range(1, coordinator.info.channels + 1)
-        if not (locked >> (ch - 1)) & 1
-    ]
-    async_add_entities(entities)
+    )
 
 
 class HbwSensor(HbwEntity, SensorEntity):
@@ -125,20 +118,3 @@ class HbwSensor(HbwEntity, SensorEntity):
     def native_value(self) -> int | float | str | None:
         return self.entity_description.value_fn(self.coordinator.data)
 
-
-class HbwTimerSensor(HbwEntity, SensorEntity):
-    """Restzeit des Ausschalt-Timers eines Kanals (0 = kein Timer)."""
-
-    _attr_translation_key = "timer"
-    _attr_device_class = SensorDeviceClass.DURATION
-    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
-
-    def __init__(self, coordinator: HbwCoordinator, channel: int) -> None:
-        super().__init__(coordinator, f"timer_{channel}")
-        self.channel = channel
-        self._attr_translation_placeholders = {"channel": str(channel)}
-
-    @property
-    def native_value(self) -> int | None:
-        timers = self.coordinator.data.timers
-        return timers[self.channel - 1] if len(timers) >= self.channel else None
