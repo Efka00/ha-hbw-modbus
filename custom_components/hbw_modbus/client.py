@@ -19,6 +19,7 @@ FC_READ_HOLDING = 0x03
 FC_READ_INPUT = 0x04
 FC_WRITE_COIL = 0x05
 FC_WRITE_REGISTER = 0x06
+FC_WRITE_REGISTERS = 0x10
 
 
 class ModbusError(Exception):
@@ -128,3 +129,9 @@ class HbwModbusClient:
         await self._request(
             unit, struct.pack(">BHH", FC_WRITE_REGISTER, address, value & 0xFFFF), retry=False
         )
+
+    async def write_registers(self, unit: int, address: int, values: list[int]) -> None:
+        """Mehrere Holding-Register in einer Anfrage schreiben (FC16)."""
+        n = len(values)
+        pdu = struct.pack(f">BHHB{n}H", FC_WRITE_REGISTERS, address, n, 2 * n, *(v & 0xFFFF for v in values))
+        await self._request(unit, pdu, retry=False)

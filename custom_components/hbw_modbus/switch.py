@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import HbwConfigEntry
 from .client import ModbusError
-from .const import HR_TIMER, HR_TOGGLE
+from .const import HR_TIMER, HR_TOGGLE, KIND_SWITCH
 from .coordinator import HbwCoordinator
 from .entity import HbwEntity
 
@@ -20,6 +20,8 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: HbwConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data.coordinator
+    if coordinator.info.kind != KIND_SWITCH:
+        return
     locked = coordinator.data.lock_mask
     async_add_entities(
         HbwChannelSwitch(coordinator, ch)

@@ -1,4 +1,4 @@
-"""Diagnosewerte eines Moduls."""
+"""Diagnosewerte eines Moduls, Zählerstand und Leistung beim Zählermodul."""
 
 from __future__ import annotations
 
@@ -11,12 +11,26 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import EntityCategory, UnitOfElectricPotential, UnitOfTime
+from homeassistant.const import (
+    EntityCategory,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import HbwConfigEntry
-from .const import RESET_CAUSES
+from .client import ModbusError
+from .const import (
+    CONF_PULSES_PER_KWH,
+    DEFAULT_PULSES_PER_KWH,
+    KIND_S0,
+    NO_PULSE,
+    RESET_CAUSES,
+)
 from .coordinator import HbwCoordinator, ModuleData
 from .entity import HbwEntity
 
@@ -100,11 +114,17 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: HbwConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data.coordinator
-    async_add_entities(
+    entities: list[SensorEntity] = [
         HbwSensor(coordinator, desc)
         for desc in DIAG_SENSORS
         if coordinator.info.has_diag or not desc.needs_diag
-    )
+    ]
+    if coordinator.info.kind == KIND_S0:
+        ppk = int(entry.options.get(CONF_PULSES_PER_KWH, DEFAULT_PULSES_PER_KWH))
+        for ch in range(1, coordinator.info.channels + 1):
+            entities.append(HbwEnergySensor(coordinator, ch, ppk))
+            entities.append(HbwPowerSensor(coordinator, ch, ppk))
+    async_add_entities(entities)
 
 
 class HbwSensor(HbwEntity, SensorEntity):
@@ -118,3 +138,64 @@ class HbwSensor(HbwEntity, SensorEntity):
     def native_value(self) -> int | float | str | None:
         return self.entity_description.value_fn(self.coordinator.data)
 
+
+
+class HbwEnergySensor(HbwEntity, SensorEntity):
+    """Zählerstand eines Eingangs in kWh (für das Energie-Dashboard)."""
+
+    _attr_translation_key = "energy"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_suggested_display_precision = 3
+
+    def __init__(self, coordinator: HbwCoordinator, channel: int, pulses_per_kwh: int) -> None:
+        super().__init__(coordinator, f"energy_{channel}", channel)
+        self.channel = channel
+        self.ppk = pulses_per_kwh
+
+    @property
+    def native_value(self) -> float | None:
+        counts = self.coordinator.data.counts
+        return counts[self.channel - 1] / self.ppk if len(counts) >= self.channel else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, int]:
+        counts = self.coordinator.data.counts
+        return {"pulses": counts[self.channel - 1]} if len(counts) >= self.channel else {}
+
+    async def async_set_meter_reading(self, value: float) -> None:
+        """Zählerstand in kWh setzen, z. B. auf den Stand des echten Zählers."""
+        try:
+            await self.coordinator.async_set_count(self.channel, round(value * self.ppk))
+        except ModbusError as err:
+            raise HomeAssistantError(f"Eingang {self.channel}: {err}") from err
+
+
+class HbwPowerSensor(HbwEntity, SensorEntity):
+    """Aktuelle Leistung aus dem Impulsabstand. Kommen keine Impulse mehr,
+    sinkt sie mit der Zeit seit dem letzten Impuls ab."""
+
+    _attr_translation_key = "power"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, coordinator: HbwCoordinator, channel: int, pulses_per_kwh: int) -> None:
+        super().__init__(coordinator, f"power_{channel}", channel)
+        self.channel = channel
+        self.ppk = pulses_per_kwh
+
+    @property
+    def native_value(self) -> float | None:
+        d = self.coordinator.data
+        if len(d.since) < self.channel:
+            return None
+        since = d.since[self.channel - 1]
+        if since == NO_PULSE:
+            return 0.0   # seit dem Start noch kein Impuls
+        ms = max(d.intervals[self.channel - 1], since)
+        if ms <= 0:
+            return None
+        return 3_600_000_000 / (self.ppk * ms)

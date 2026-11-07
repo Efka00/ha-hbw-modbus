@@ -2,8 +2,9 @@
 
 Aufbau wie bei den bisherigen HM485-Geräten: ein Gerät je Modul
 (z. B. „HBWMB_A03“ mit den Diagnosewerten) und ein eigenes Gerät je Kanal
-(„HBWMB_A03 Kanal 1“, Modell „HBWMB_A03“ von „HM485MB“), verbunden über das
-Modulgerät. Die Kanalgeräte lassen sich in HA frei umbenennen.
+bzw. Eingang („HBWMB_A03 Kanal 1“, „HBWMB_S01 Eingang 1“, Modell
+„HBWMB_A03“ von „HM485MB“), verbunden über das Modulgerät. Die Kanalgeräte
+lassen sich in HA frei umbenennen.
 """
 
 from __future__ import annotations
@@ -12,13 +13,20 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER
+from .const import DOMAIN, KIND_S0, MANUFACTURER
 from .coordinator import HbwCoordinator, ModuleInfo
 
 
-def module_name(unit: int) -> str:
-    """HBWMB_Axx wie die A-Nummern der HBW-Module (Modbus-ID = A-Nummer)."""
+def module_name(unit: int, kind: str) -> str:
+    """Name wie die HBW-Nummern: A = Ausgänge (Schalt-/Rollladenmodul,
+    Modbus-ID = A-Nummer), S = Zähler (ab ID 101: 101 = S01)."""
+    if kind == KIND_S0:
+        return f"HBWMB_S{unit - 100 if unit > 100 else unit:02d}"
     return f"HBWMB_A{unit:02d}"
+
+
+def channel_word(kind: str) -> str:
+    return "Eingang" if kind == KIND_S0 else "Kanal"
 
 
 def module_device_info(entry: ConfigEntry, info: ModuleInfo) -> DeviceInfo:
@@ -37,13 +45,13 @@ def channel_identifier(entry: ConfigEntry, channel: int) -> tuple[str, str]:
     return (DOMAIN, f"{entry.unique_id}_ch{channel}")
 
 
-def channel_device_info(entry: ConfigEntry, unit: int, channel: int) -> DeviceInfo:
+def channel_device_info(entry: ConfigEntry, unit: int, kind: str, channel: int) -> DeviceInfo:
     assert entry.unique_id is not None
     return DeviceInfo(
         identifiers={channel_identifier(entry, channel)},
-        name=f"{entry.title} Kanal {channel}",
+        name=f"{entry.title} {channel_word(kind)} {channel}",
         manufacturer=MANUFACTURER,
-        model=module_name(unit),
+        model=module_name(unit, kind),
         via_device=(DOMAIN, entry.unique_id),
     )
 
@@ -61,4 +69,6 @@ class HbwEntity(CoordinatorEntity[HbwCoordinator]):
         if channel is None:
             self._attr_device_info = module_device_info(entry, coordinator.info)
         else:
-            self._attr_device_info = channel_device_info(entry, coordinator.unit, channel)
+            self._attr_device_info = channel_device_info(
+                entry, coordinator.unit, coordinator.info.kind, channel
+            )

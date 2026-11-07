@@ -23,13 +23,13 @@ Einstellungen → Geräte & Dienste → Integration hinzufügen → „HBW Modbu
 | Gateway | IP oder Name des Modbus-TCP-Gateways |
 | Port | meist 502 |
 | Modbus-ID | ID des Moduls (1–247) |
-| Name | optional, Name des Modulgeräts (leer = `HBWMB_A` + Modbus-ID, z. B. `HBWMB_A03`) |
+| Name | optional, Name des Modulgeräts (leer = `HBWMB_A` + Modbus-ID, z. B. `HBWMB_A03`; Zählermodule ab ID 101 = `HBWMB_S01`) |
 
 Die Integration liest Firmware-Version, Kanalzahl und Modultyp aus dem
 Modul. Je Modul entsteht ein Eintrag, alle Module an einem Gateway teilen
 sich eine Verbindung.
 
-## Geräte und Entitäten (Schaltmodul HBW-MB-Sw)
+## Schaltmodul (HBW-MB-Sw)
 
 Aufgebaut wie die bisherigen HM485-Geräte:
 
@@ -55,6 +55,34 @@ target:
 data:
   seconds: 300
 ```
+
+## Zählermodul (HBW-MB-S0)
+
+| Gerät | Geräte-Informationen | Entitäten |
+|---|---|---|
+| Modul, Name `HBWMB_S01` (Modbus-ID 101 = S01) | „HBW-MB-S0 (8 Eingänge) von HM485MB“ | Diagnose wie beim Schaltmodul |
+| je Eingang, Name `HBWMB_S01 Eingang n` | „HBWMB_S01 von HM485MB“ | „Zählerstand“ in kWh (für das Energie-Dashboard, Attribut `pulses` = Impulse), „Leistung“ in W |
+
+- **Impulse pro kWh:** Standard 1000, einstellbar unter „Konfigurieren“ am
+  Eintrag (gilt für alle Eingänge des Moduls).
+- **Leistung:** aus dem Abstand der letzten beiden Impulse. Kommen keine
+  Impulse mehr, sinkt sie mit der Zeit seit dem letzten Impuls ab.
+- **Zählerstand angleichen:**
+
+  ```yaml
+  action: hbw_modbus.set_meter_reading
+  target:
+    entity_id: sensor.hbwmb_s01_eingang_1_zahlerstand
+  data:
+    value: 12345.678
+  ```
+
+- **Schutz vor Rücksprüngen:** Das Modul speichert seine Zählerstände nur
+  alle 10 Minuten. Fällt der Strom aus, meldet es danach etwas weniger. Die
+  Integration merkt sich den höchsten Stand je Eingang und schreibt ihn
+  dann ins Modul zurück, damit das Energie-Dashboard keinen Sprung macht.
+  Einen Zählerstand nach unten setzen deshalb nur über
+  `hbw_modbus.set_meter_reading`, nicht über die USB-Konsole des Moduls.
 
 ## Betrieb
 

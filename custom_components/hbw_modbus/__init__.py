@@ -11,15 +11,19 @@ from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, device_registry as dr, service
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.helpers.typing import ConfigType
 
 from .client import HbwModbusClient, ModbusError
 from .const import (
     ATTR_SECONDS,
+    ATTR_VALUE,
     CONF_DEVICE_ADDRESS,
     DEFAULT_TIMEOUT,
     DOMAIN,
+    KIND_S0,
     KIND_SWITCH,
+    SERVICE_SET_METER_READING,
     SERVICE_TURN_ON_FOR,
 )
 from .coordinator import HbwCoordinator, probe_module
@@ -38,6 +42,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         entity_domain=Platform.SWITCH,
         schema={vol.Required(ATTR_SECONDS): vol.All(cv.positive_int, vol.Range(min=1, max=65535))},
         func="async_turn_on_for",
+    )
+    service.async_register_platform_entity_service(
+        hass,
+        DOMAIN,
+        SERVICE_SET_METER_READING,
+        entity_domain=Platform.SENSOR,
+        entity_device_classes=[SensorDeviceClass.ENERGY],
+        schema={vol.Required(ATTR_VALUE): vol.All(vol.Coerce(float), vol.Range(min=0))},
+        func="async_set_meter_reading",
     )
     return True
 
@@ -83,10 +96,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
     except ModbusError as err:
         await release_client(hass, client)
         raise ConfigEntryNotReady(str(err)) from err
-    if info.kind != KIND_SWITCH:
+    if info.kind not in (KIND_SWITCH, KIND_S0):
         await release_client(hass, client)
         raise ConfigEntryNotReady("Rollladenmodule werden noch nicht unterstützt")
     coordinator = HbwCoordinator(hass, entry, client, unit, info)
+    await coordinator.async_load_counts()
     try:
         await coordinator.async_config_entry_first_refresh()
     except ConfigEntryNotReady:
@@ -100,6 +114,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Kanalgeräte entfernen, die es nicht mehr gibt (z. B. jetzt Rollladen-Kanäle)
+    entry.async_on_unload(entry.add_update_listener(_options_updated))
     locked = coordinator.data.lock_mask
     expected = {(DOMAIN, entry.unique_id)} | {
         channel_identifier(entry, ch)
@@ -110,6 +125,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
         if not device.identifiers & expected:
             dev_reg.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
     return True
+
+
+async def _options_updated(hass: HomeAssistant, entry: HbwConfigEntry) -> None:
+    """Optionen geändert (Impulse pro kWh): neu laden."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:

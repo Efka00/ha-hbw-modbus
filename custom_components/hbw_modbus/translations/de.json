@@ -8,7 +8,7 @@
           "host": "Gateway (IP oder Name)",
           "port": "Port",
           "device_address": "Modbus-ID",
-          "name": "Name (leer = HBWMB_A + Modbus-ID)"
+          "name": "Name (leer = HBWMB_A + Modbus-ID, Zähler ab ID 101: HBWMB_S01 …)"
         }
       }
     },
@@ -46,6 +46,12 @@
       },
       "supply_voltage": {
         "name": "Betriebsspannung"
+      },
+      "energy": {
+        "name": "Zählerstand"
+      },
+      "power": {
+        "name": "Leistung"
       }
     }
   },
@@ -57,6 +63,27 @@
         "seconds": {
           "name": "Sekunden",
           "description": "Einschaltdauer, 1–65535 s"
+        }
+      }
+    },
+    "set_meter_reading": {
+      "name": "Zählerstand setzen",
+      "description": "Zählerstand eines S0-Eingangs in kWh setzen, z. B. auf den Stand des echten Zählers. Wird sofort im Modul gespeichert.",
+      "fields": {
+        "value": {
+          "name": "Zählerstand",
+          "description": "Neuer Zählerstand in kWh"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Zählermodul",
+        "description": "Impulse pro kWh der angeschlossenen Zähler (steht auf dem Zähler, z. B. 1000 imp/kWh).",
+        "data": {
+          "pulses_per_kwh": "Impulse pro kWh"
         }
       }
     }

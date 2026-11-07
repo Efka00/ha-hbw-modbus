@@ -8,7 +8,7 @@
           "host": "Gateway (IP or host name)",
           "port": "Port",
           "device_address": "Modbus ID",
-          "name": "Name (empty = HBWMB_A + Modbus ID)"
+          "name": "Name (empty = HBWMB_A + Modbus ID, counters from ID 101: HBWMB_S01 …)"
         }
       }
     },
@@ -46,6 +46,12 @@
       },
       "supply_voltage": {
         "name": "Supply voltage"
+      },
+      "energy": {
+        "name": "Energy"
+      },
+      "power": {
+        "name": "Power"
       }
     }
   },
@@ -57,6 +63,27 @@
         "seconds": {
           "name": "Seconds",
           "description": "On time, 1–65535 s"
+        }
+      }
+    },
+    "set_meter_reading": {
+      "name": "Set meter reading",
+      "description": "Set the meter reading of an S0 input in kWh, e.g. to match the real meter. Saved in the module immediately.",
+      "fields": {
+        "value": {
+          "name": "Meter reading",
+          "description": "New meter reading in kWh"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Counter module",
+        "description": "Pulses per kWh of the connected meters (printed on the meter, e.g. 1000 imp/kWh).",
+        "data": {
+          "pulses_per_kwh": "Pulses per kWh"
         }
       }
     }
