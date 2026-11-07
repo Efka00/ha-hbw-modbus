@@ -53,6 +53,29 @@
       "power": {
         "name": "Leistung"
       }
+    },
+    "number": {
+      "time_up": {
+        "name": "Fahrzeit auf"
+      },
+      "time_down": {
+        "name": "Fahrzeit zu"
+      },
+      "time_lift": {
+        "name": "Zeit bis Endleiste hebt ab"
+      },
+      "time_mid": {
+        "name": "Zeit bis Endleiste in der Mitte"
+      },
+      "dead_time": {
+        "name": "Totzeit beim Anlauf"
+      },
+      "end_surcharge": {
+        "name": "Endlagenzuschlag"
+      },
+      "reference_after": {
+        "name": "Referenzfahrt nach Zwischenfahrten"
+      }
     }
   },
   "services": {

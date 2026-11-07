@@ -51,6 +51,18 @@ die erste Fahrt in eine Endlage macht sie wieder bekannt. Während einer
 Fahrt fragt die Integration jede Sekunde ab. Rollladenmodule (HBW-MB-Bl)
 kann die Integration noch nicht.
 
+Am Rollladengerät stehen unter „Konfiguration“ die Einstellungen, die das
+Modul speichert:
+
+| Einstellung | Bereich | Bedeutung |
+|---|---|---|
+| Fahrzeit auf / zu | 1–600 s | gesamte Fahrzeit ab Motorstart |
+| Zeit bis Endleiste hebt ab | 0–600 s | Schlitzphase beim Auffahren, 0 = keine |
+| Zeit bis Endleiste in der Mitte | 0–600 s | Kennlinie (Wickelradius), 0 = linear |
+| Totzeit beim Anlauf | 0–5 s | Zeit ohne Bewegung nach Motorstart |
+| Endlagenzuschlag | 0–100 % | Nachlauf an den Endlagen, Standard 10 % |
+| Referenzfahrt nach Zwischenfahrten | 0–1000 | nach so vielen Fahrten ohne Endlage erst in eine Endlage, 0 = aus |
+
 ### Einschalten mit Timer
 
 Wie `on-for-timer` in FHEM: Das Modul schaltet den Kanal nach der Zeit

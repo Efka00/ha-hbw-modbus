@@ -53,6 +53,29 @@
       "power": {
         "name": "Power"
       }
+    },
+    "number": {
+      "time_up": {
+        "name": "Travel time up"
+      },
+      "time_down": {
+        "name": "Travel time down"
+      },
+      "time_lift": {
+        "name": "Time until slats open"
+      },
+      "time_mid": {
+        "name": "Time until halfway"
+      },
+      "dead_time": {
+        "name": "Start-up dead time"
+      },
+      "end_surcharge": {
+        "name": "End position surcharge"
+      },
+      "reference_after": {
+        "name": "Reference run after moves"
+      }
     }
   },
   "services": {

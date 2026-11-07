@@ -30,7 +30,7 @@ from .const import (
 from .coordinator import HbwCoordinator, probe_module
 from .entity import blind_identifier, channel_identifier, module_device_info
 
-PLATFORMS: list[Platform] = [Platform.COVER, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS: list[Platform] = [Platform.COVER, Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 

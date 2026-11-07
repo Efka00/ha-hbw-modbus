@@ -37,6 +37,8 @@ from .const import (
     BLIND_OPENING,
     IR_BLIND,
     IR_BLIND_COUNT,
+    HR_BLIND_PAR,
+    BLIND_PAR_COUNT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -83,6 +85,7 @@ class ModuleData:
     intervals: list[int] = field(default_factory=list)  # ms zwischen den letzten Impulsen
     since: list[int] = field(default_factory=list)      # ms seit dem letzten Impuls
     blind: dict[str, int] | None = None                 # Rollladen auf dem Schaltmodul
+    blind_par: list[int] = field(default_factory=list)  # HR12..18 (Fahrzeiten usw.)
 
     @property
     def blind_moving(self) -> bool:
@@ -161,6 +164,14 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         self._reload_scheduled = True
         _LOGGER.info("%s: %s, Integration wird neu geladen", self.name, why)
         self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+
+    async def async_set_blind_par(self, index: int, value: int) -> None:
+        """Rollladen-Parameter (0 = HR12 … 6 = HR18) schreiben, sofort anzeigen."""
+        await self.client.write_register(self.unit, HR_BLIND_PAR + index, value)
+        if self.data is not None and len(self.data.blind_par) > index:
+            par = list(self.data.blind_par)
+            par[index] = value
+            self.async_set_updated_data(replace(self.data, blind_par=par))
 
     async def async_load_counts(self) -> None:
         stored = await self._store.async_load()
@@ -247,6 +258,9 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
                 if data.lock_mask:
                     b = await self.client.read_registers(self.unit, True, IR_BLIND, IR_BLIND_COUNT)
                     data.blind = {"position": b[0], "status": b[4], "known": b[8], "teach": b[12], "moves": b[16]}
+                    data.blind_par = await self.client.read_registers(
+                        self.unit, False, HR_BLIND_PAR, BLIND_PAR_COUNT
+                    )
                 if self._setup_lock is None:
                     self._setup_lock = data.lock_mask
                 elif data.lock_mask != self._setup_lock:
