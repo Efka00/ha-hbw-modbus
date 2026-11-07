@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add HBW-MB module",
+        "description": "Modbus gateway (e.g. Waveshare RS485 TO ETH in Modbus TCP to RTU mode) and the module's Modbus ID.",
+        "data": {
+          "host": "Gateway (IP or host name)",
+          "port": "Port",
+          "device_address": "Modbus ID",
+          "name": "Name (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "The module does not answer. Check gateway, port and Modbus ID.",
+      "blind_not_supported": "Blind modules (HBW-MB-Bl) are not supported yet."
+    },
+    "abort": {
+      "already_configured": "This module is already configured."
+    }
+  },
+  "entity": {
+    "switch": {
+      "channel": {
+        "name": "Channel {channel}"
+      }
+    },
+    "sensor": {
+      "timer": {
+        "name": "Timer channel {channel}"
+      },
+      "uptime": {
+        "name": "Uptime"
+      },
+      "crc_errors": {
+        "name": "CRC errors"
+      },
+      "reset_cause": {
+        "name": "Restart reason",
+        "state": {
+          "unknown": "Unknown",
+          "power_on": "Power on",
+          "external": "Reset button/USB",
+          "brownout": "Brown-out",
+          "watchdog": "Watchdog"
+        }
+      },
+      "watchdog_restarts": {
+        "name": "Watchdog restarts"
+      },
+      "boot_count": {
+        "name": "Boot count"
+      },
+      "supply_voltage": {
+        "name": "Supply voltage"
+      }
+    }
+  },
+  "services": {
+    "turn_on_for": {
+      "name": "Turn on for",
+      "description": "Turn the channel on; the module turns it off by itself after the given time (like on-for-timer).",
+      "fields": {
+        "seconds": {
+          "name": "Seconds",
+          "description": "On time, 1–65535 s"
+        }
+      }
+    }
+  }
+}

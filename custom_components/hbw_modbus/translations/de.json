@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HBW-MB-Modul hinzufügen",
+        "description": "Modbus-Gateway (z. B. Waveshare RS485 TO ETH im Modus Modbus TCP to RTU) und Modbus-ID des Moduls.",
+        "data": {
+          "host": "Gateway (IP oder Name)",
+          "port": "Port",
+          "device_address": "Modbus-ID",
+          "name": "Name (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Das Modul antwortet nicht. Gateway, Port und Modbus-ID prüfen.",
+      "blind_not_supported": "Rollladenmodule (HBW-MB-Bl) werden noch nicht unterstützt."
+    },
+    "abort": {
+      "already_configured": "Dieses Modul ist schon eingerichtet."
+    }
+  },
+  "entity": {
+    "switch": {
+      "channel": {
+        "name": "Kanal {channel}"
+      }
+    },
+    "sensor": {
+      "timer": {
+        "name": "Timer Kanal {channel}"
+      },
+      "uptime": {
+        "name": "Laufzeit"
+      },
+      "crc_errors": {
+        "name": "CRC-Fehler"
+      },
+      "reset_cause": {
+        "name": "Neustart-Grund",
+        "state": {
+          "unknown": "Unbekannt",
+          "power_on": "Einschalten",
+          "external": "Reset-Taste/USB",
+          "brownout": "Unterspannung",
+          "watchdog": "Watchdog"
+        }
+      },
+      "watchdog_restarts": {
+        "name": "Watchdog-Neustarts"
+      },
+      "boot_count": {
+        "name": "Starts"
+      },
+      "supply_voltage": {
+        "name": "Betriebsspannung"
+      }
+    }
+  },
+  "services": {
+    "turn_on_for": {
+      "name": "Einschalten für",
+      "description": "Kanal einschalten, das Modul schaltet ihn nach der angegebenen Zeit selbst aus (wie on-for-timer).",
+      "fields": {
+        "seconds": {
+          "name": "Sekunden",
+          "description": "Einschaltdauer, 1–65535 s"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "domain": "hbw_modbus",
+  "name": "HBW Modbus",
+  "codeowners": ["@Efka00"],
+  "config_flow": true,
+  "documentation": "https://github.com/Efka00/ha-hbw-modbus",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Efka00/ha-hbw-modbus/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
