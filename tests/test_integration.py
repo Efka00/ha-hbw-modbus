@@ -39,9 +39,9 @@ async def _setup(hass: HomeAssistant, port: int) -> MockConfigEntry:
 
 
 async def test_config_flow_creates_entry(hass: HomeAssistant, gateway) -> None:
-    result = await _flow(hass, gateway.port)
+    result = await _flow(hass, gateway.port, name="")
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "arduinohbwtest"
+    assert result["title"] == "HBWMB_A03"
     assert result["data"] == {CONF_HOST: "127.0.0.1", CONF_PORT: gateway.port, CONF_DEVICE_ADDRESS: 3}
     # zweites Mal dasselbe Modul: abgelehnt
     again = await _flow(hass, gateway.port)
@@ -56,16 +56,22 @@ async def test_config_flow_no_answer(hass: HomeAssistant, gateway) -> None:
 
 async def test_device_and_entities(hass: HomeAssistant, gateway) -> None:
     entry = await _setup(hass, gateway.port)
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.unique_id)})
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_device(identifiers={(DOMAIN, entry.unique_id)})
     assert device is not None
     assert device.name == "arduinohbwtest"
+    assert device.manufacturer == "HM485MB"
     assert device.sw_version == "1.07"
     assert device.model == "HBW-MB-Sw (12 Kanäle)"
-    entities = er.async_entries_for_device(er.async_get(hass), device.id)
-    switches = [e for e in entities if e.domain == "switch"]
-    sensors = [e for e in entities if e.domain == "sensor"]
-    assert len(switches) == 12
+    sensors = er.async_entries_for_device(er.async_get(hass), device.id)
     assert len(sensors) == 2           # Laufzeit, CRC (v1.07 ohne Diagnose)
+    # je Kanal ein eigenes Gerät, verbunden über das Modul
+    channel = dev_reg.async_get_device(identifiers={(DOMAIN, f"{entry.unique_id}_ch1")})
+    assert channel is not None
+    assert channel.name == "arduinohbwtest Kanal 1"
+    assert channel.model == "HBWMB_A03" and channel.manufacturer == "HM485MB"
+    assert channel.via_device_id == device.id
+    assert len(dr.async_entries_for_config_entry(dev_reg, entry.entry_id)) == 13
     assert hass.states.get("switch.arduinohbwtest_kanal_1").state == "off"
     assert hass.states.get("sensor.arduinohbwtest_laufzeit") is not None
 

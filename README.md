@@ -23,22 +23,25 @@ Einstellungen → Geräte & Dienste → Integration hinzufügen → „HBW Modbu
 | Gateway | IP oder Name des Modbus-TCP-Gateways |
 | Port | meist 502 |
 | Modbus-ID | ID des Moduls (1–247) |
-| Name | optional, Name des Geräts |
+| Name | optional, Name des Modulgeräts (leer = `HBWMB_A` + Modbus-ID, z. B. `HBWMB_A03`) |
 
 Die Integration liest Firmware-Version, Kanalzahl und Modultyp aus dem
 Modul. Je Modul entsteht ein Eintrag, alle Module an einem Gateway teilen
 sich eine Verbindung.
 
-## Entitäten (Schaltmodul HBW-MB-Sw)
+## Geräte und Entitäten (Schaltmodul HBW-MB-Sw)
 
-| Entität | Inhalt |
-|---|---|
-| Schalter „Kanal n“ | Relais schalten. `switch.toggle` schaltet im Modul selbst um. Attribut `timer_remaining`: Restzeit des Ausschalt-Timers in s (0 = kein Timer) |
-| Diagnose | Laufzeit, CRC-Fehler; ab Firmware v1.08 zusätzlich Neustart-Grund, Watchdog-Neustarts, Starts, Betriebsspannung |
+Aufgebaut wie die bisherigen HM485-Geräte:
 
-Die beiden Kanäle eines am Modul eingerichteten Rollladens werden nicht als
-Schalter angelegt. Rollladenmodule (HBW-MB-Bl) und Rollläden auf
-Schaltmodulen kann die Integration noch nicht.
+| Gerät | Geräte-Informationen | Entitäten |
+|---|---|---|
+| Modul, Name `HBWMB_A03` (A + Modbus-ID) | „HBW-MB-Sw (12 Kanäle) von HM485MB“, Firmware-Version | Diagnose: Laufzeit, CRC-Fehler; ab Firmware v1.08 zusätzlich Neustart-Grund, Watchdog-Neustarts, Starts, Betriebsspannung |
+| je Kanal, Name `HBWMB_A03 Kanal n` | „HBWMB_A03 von HM485MB“, verbunden über das Modul | Schalter. `switch.toggle` schaltet im Modul selbst um. Attribut `timer_remaining`: Restzeit des Ausschalt-Timers in s |
+
+Die Kanalgeräte lassen sich wie gewohnt umbenennen, z. B. in
+„EG_AK_BL_Decke“. Für die beiden Kanäle eines am Modul eingerichteten
+Rollladens gibt es kein Kanalgerät. Rollladenmodule (HBW-MB-Bl) und
+Rollläden auf Schaltmodulen kann die Integration noch nicht.
 
 ### Einschalten mit Timer
 

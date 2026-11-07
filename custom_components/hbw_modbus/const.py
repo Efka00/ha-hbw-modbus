@@ -3,6 +3,7 @@
 from datetime import timedelta
 
 DOMAIN = "hbw_modbus"
+MANUFACTURER = "HM485MB"
 
 CONF_DEVICE_ADDRESS = "device_address"
 

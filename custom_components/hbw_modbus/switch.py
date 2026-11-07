@@ -29,14 +29,14 @@ async def async_setup_entry(
 
 
 class HbwChannelSwitch(HbwEntity, SwitchEntity):
-    """Ein Kanal: Coil schreiben, Zustand aus HR2."""
+    """Ein Kanal als eigenes Gerät: Coil schreiben, Zustand aus HR2.
+    Hauptentität des Kanalgeräts, trägt dessen Namen."""
 
-    _attr_translation_key = "channel"
+    _attr_name = None
 
     def __init__(self, coordinator: HbwCoordinator, channel: int) -> None:
-        super().__init__(coordinator, f"channel_{channel}")
+        super().__init__(coordinator, f"channel_{channel}", channel)
         self.channel = channel
-        self._attr_translation_placeholders = {"channel": str(channel)}
 
     @property
     def _bit(self) -> int:

@@ -8,7 +8,7 @@
           "host": "Gateway (IP oder Name)",
           "port": "Port",
           "device_address": "Modbus-ID",
-          "name": "Name (optional)"
+          "name": "Name (leer = HBWMB_A + Modbus-ID)"
         }
       }
     },
@@ -21,11 +21,6 @@
     }
   },
   "entity": {
-    "switch": {
-      "channel": {
-        "name": "Kanal {channel}"
-      }
-    },
     "sensor": {
       "uptime": {
         "name": "Laufzeit"

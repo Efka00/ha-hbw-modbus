@@ -13,6 +13,7 @@ from homeassistant.helpers import selector
 from .client import HbwModbusClient, ModbusError
 from .const import CONF_DEVICE_ADDRESS, DEFAULT_PORT, DEFAULT_TIMEOUT, DOMAIN, KIND_SWITCH
 from .coordinator import probe_module
+from .entity import module_name
 
 
 class HbwModbusConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -39,7 +40,7 @@ class HbwModbusConfigFlow(ConfigFlow, domain=DOMAIN):
             finally:
                 await client.close()
             if not errors:
-                name = (user_input.get(CONF_NAME) or "").strip() or f"HBW-MB ID {unit}"
+                name = (user_input.get(CONF_NAME) or "").strip() or module_name(unit)
                 return self.async_create_entry(
                     title=name,
                     data={CONF_HOST: host, CONF_PORT: port, CONF_DEVICE_ADDRESS: unit},
