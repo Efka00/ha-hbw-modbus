@@ -58,6 +58,9 @@ data:
 - Jedes Modul wird alle 5 s abgefragt (drei bis vier Anfragen).
 - Antwortet ein Modul nicht, sind seine Entitäten „nicht verfügbar“, bis es
   wieder antwortet.
+- Nach einem Firmware-Update, einem Modultausch unter derselben ID oder
+  wenn am Modul ein Rollladen ein- oder ausgerichtet wird, lädt sich der
+  Eintrag selbst neu. Gerät und Entitäten passen dann zum neuen Stand.
 - Der Waveshare schickt die Antworten vom Bus an alle verbundenen
   TCP-Clients. Die Integration verwirft fremde Antworten, andere Programme
   am selben Gateway (z. B. die Modbus-YAML von Home Assistant) melden dann

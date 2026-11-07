@@ -108,6 +108,17 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         self.unit = unit
         self.info = info
         self._writes = 0   # zählt Schaltbefehle, erkennt überholte Abfragen
+        self._setup_lock: int | None = None   # Rollladen-Kanäle beim Einrichten
+        self._reload_scheduled = False
+
+    def _module_changed(self, why: str) -> None:
+        """Modul hat sich geändert (Firmware, Kanäle, Rollladen): Eintrag neu laden,
+        damit Gerät und Entitäten zum neuen Stand passen."""
+        if self._reload_scheduled or self.config_entry is None:
+            return
+        self._reload_scheduled = True
+        _LOGGER.info("%s: %s, Integration wird neu geladen", self.name, why)
+        self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
 
     def note_write(self, outputs: int, channel: int, timer: int) -> None:
         """Nach einem quittierten Schaltbefehl den neuen Zustand sofort übernehmen,
@@ -130,9 +141,17 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         writes = self._writes
         try:
             info = await self.client.read_registers(self.unit, True, IR_INFO, IR_INFO_COUNT)
+            if info[0] != self.info.firmware:
+                self._module_changed(f"Firmware {self.info.firmware_str} -> {info[0] >> 8}.{info[0] & 0xFF:02d}")
+            elif info[1] != self.info.channels or ((info[2] << 16) | info[3]) != self.info.hbw_address:
+                self._module_changed("anderes Modul unter dieser ID")
             data = ModuleData(info=info)
             if self.info.kind == KIND_SWITCH:
                 await self._read_outputs(data)
+                if self._setup_lock is None:
+                    self._setup_lock = data.lock_mask
+                elif data.lock_mask != self._setup_lock:
+                    self._module_changed("Rollladen-Kanäle geändert")
             if self.info.has_diag:
                 data.diag = await self.client.read_registers(self.unit, True, IR_DIAG, IR_DIAG_COUNT)
             # Während der Abfrage geschaltet: Ausgänge könnten veraltet sein, neu lesen
