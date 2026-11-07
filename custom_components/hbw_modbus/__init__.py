@@ -28,9 +28,9 @@ from .const import (
     SERVICE_TURN_ON_FOR,
 )
 from .coordinator import HbwCoordinator, probe_module
-from .entity import channel_identifier, module_device_info
+from .entity import blind_identifier, channel_identifier, module_device_info
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH]
+PLATFORMS: list[Platform] = [Platform.COVER, Platform.SENSOR, Platform.SWITCH]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -123,6 +123,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
         for ch in range(1, info.channels + 1)
         if not (locked >> (ch - 1)) & 1
     }
+    if locked:
+        expected.add(blind_identifier(entry))
     for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
         if not device.identifiers & expected:
             dev_reg.async_update_device(device.id, remove_config_entry_id=entry.entry_id)

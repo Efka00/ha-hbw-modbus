@@ -32,6 +32,11 @@ from .const import (
     KIND_SWITCH,
     MODULE_TYPE_S0,
     SCAN_INTERVAL,
+    SCAN_INTERVAL_MOVING,
+    BLIND_CLOSING,
+    BLIND_OPENING,
+    IR_BLIND,
+    IR_BLIND_COUNT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -77,6 +82,11 @@ class ModuleData:
     counts: list[int] = field(default_factory=list)     # Zählerstände (Impulse)
     intervals: list[int] = field(default_factory=list)  # ms zwischen den letzten Impulsen
     since: list[int] = field(default_factory=list)      # ms seit dem letzten Impuls
+    blind: dict[str, int] | None = None                 # Rollladen auf dem Schaltmodul
+
+    @property
+    def blind_moving(self) -> bool:
+        return self.blind is not None and self.blind["status"] in (BLIND_OPENING, BLIND_CLOSING)
 
 
 def _u32(regs: list[int], n: int) -> list[int]:
@@ -234,6 +244,9 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
                 await self._check_counts(data)
             if self.info.kind == KIND_SWITCH:
                 await self._read_outputs(data)
+                if data.lock_mask:
+                    b = await self.client.read_registers(self.unit, True, IR_BLIND, IR_BLIND_COUNT)
+                    data.blind = {"position": b[0], "status": b[4], "known": b[8], "teach": b[12], "moves": b[16]}
                 if self._setup_lock is None:
                     self._setup_lock = data.lock_mask
                 elif data.lock_mask != self._setup_lock:
@@ -248,4 +261,6 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
                 await self._read_outputs(data)
         except ModbusError as err:
             raise UpdateFailed(str(err)) from err
+        # während einer Rollladenfahrt jede Sekunde abfragen
+        self.update_interval = SCAN_INTERVAL_MOVING if data.blind_moving else SCAN_INTERVAL
         return data

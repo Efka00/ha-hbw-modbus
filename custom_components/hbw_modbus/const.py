@@ -40,6 +40,14 @@ IR_INFO_COUNT = 7
 IR_DIAG = 30           # IR30..35 ab HBW-MB-Sw v1.08 / HBW-MB-Bl v1.05
 IR_DIAG_COUNT = 6
 
+# Rollladen auf einem Schaltmodul (Register wie HBW-MB-Bl für Rollladen 1)
+HR_BLIND_CMD = 10      # schreiben: 0 zu, 1 auf, 2 Stopp; lesen: Status
+HR_BLIND_POS = 11      # schreiben: Position 0..100 anfahren
+IR_BLIND = 10          # IR10..26: Position (10), Status (14), bekannt (18), Einlernschritt (22), Zwischenfahrten (26)
+IR_BLIND_COUNT = 17
+BLIND_CLOSED, BLIND_OPEN, BLIND_OPENING, BLIND_CLOSING = 0, 1, 2, 3
+SCAN_INTERVAL_MOVING = timedelta(seconds=1)
+
 FW_DIAG_SW = 0x0108
 FW_DIAG_BL = 0x0105
 

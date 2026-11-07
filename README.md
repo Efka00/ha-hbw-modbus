@@ -39,9 +39,17 @@ Aufgebaut wie die bisherigen HM485-Geräte:
 | je Kanal, Name `HBWMB_A03 Kanal n` | „HBWMB_A03 von HM485MB“, verbunden über das Modul | Schalter. `switch.toggle` schaltet im Modul selbst um. Attribut `timer_remaining`: Restzeit des Ausschalt-Timers in s |
 
 Die Kanalgeräte lassen sich wie gewohnt umbenennen, z. B. in
-„EG_AK_BL_Decke“. Für die beiden Kanäle eines am Modul eingerichteten
-Rollladens gibt es kein Kanalgerät. Rollladenmodule (HBW-MB-Bl) und
-Rollläden auf Schaltmodulen kann die Integration noch nicht.
+„EG_AK_BL_Decke“.
+
+**Rollladen auf zwei Kanälen:** Ist am Modul ein Rollladen eingerichtet
+(HR4 Motor, HR5 Richtung, siehe Firmware), gibt es für diese beiden Kanäle
+kein Kanalgerät. Stattdessen erscheint das Gerät `HBWMB_A03 Rollladen` mit
+einem Rollladen (Auf, Ab, Stopp, Position). Fahrlogik, Kennlinie und
+Schutzpausen laufen im Modul. Solange die Position nach dem Einrichten oder
+einem Neustart während der Fahrt unbekannt ist, zeigt HA keine Position an;
+die erste Fahrt in eine Endlage macht sie wieder bekannt. Während einer
+Fahrt fragt die Integration jede Sekunde ab. Rollladenmodule (HBW-MB-Bl)
+kann die Integration noch nicht.
 
 ### Einschalten mit Timer
 

@@ -58,17 +58,38 @@ def channel_device_info(
     )
 
 
+def blind_identifier(entry: ConfigEntry) -> tuple[str, str]:
+    return (DOMAIN, f"{entry.unique_id}_blind1")
+
+
+def blind_device_info(entry: ConfigEntry, unit: int, kind: str, module_device_id: str | None) -> DeviceInfo:
+    """Rollladen auf zwei Kanälen eines Schaltmoduls als eigenes Gerät."""
+    return DeviceInfo(
+        identifiers={blind_identifier(entry)},
+        name=f"{entry.title} Rollladen",
+        manufacturer=MANUFACTURER,
+        model=module_name(unit, kind),
+        via_device_id=module_device_id,
+    )
+
+
 class HbwEntity(CoordinatorEntity[HbwCoordinator]):
     """Entität eines HBW-MB-Moduls, am Modulgerät oder an einem Kanalgerät."""
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: HbwCoordinator, key: str, channel: int | None = None) -> None:
+    def __init__(
+        self, coordinator: HbwCoordinator, key: str, channel: int | None = None, blind: bool = False
+    ) -> None:
         super().__init__(coordinator)
         entry = coordinator.config_entry
         assert entry is not None and entry.unique_id is not None
         self._attr_unique_id = f"{entry.unique_id}_{key}"
-        if channel is None:
+        if blind:
+            self._attr_device_info = blind_device_info(
+                entry, coordinator.unit, coordinator.info.kind, coordinator.module_device_id
+            )
+        elif channel is None:
             self._attr_device_info = module_device_info(entry, coordinator.info)
         else:
             self._attr_device_info = channel_device_info(
