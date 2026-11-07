@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -107,20 +107,40 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         self.client = client
         self.unit = unit
         self.info = info
+        self._writes = 0   # zählt Schaltbefehle, erkennt überholte Abfragen
+
+    def note_write(self, outputs: int, channel: int, timer: int) -> None:
+        """Nach einem quittierten Schaltbefehl den neuen Zustand sofort übernehmen,
+        statt auf die nächste Abfrage zu warten."""
+        self._writes += 1
+        if self.data is None:
+            return
+        timers = list(self.data.timers)
+        if len(timers) >= channel:
+            timers[channel - 1] = timer
+        self.async_set_updated_data(replace(self.data, outputs=outputs, timers=timers))
+
+    async def _read_outputs(self, data: ModuleData) -> None:
+        config = await self.client.read_registers(self.unit, False, HR_CONFIG, 8)
+        data.outputs = config[HR_OUTPUTS]
+        data.lock_mask = lock_mask(config, self.info.channels)
+        data.timers = await self.client.read_registers(self.unit, False, HR_TIMER, self.info.channels)
 
     async def _async_update_data(self) -> ModuleData:
+        writes = self._writes
         try:
             info = await self.client.read_registers(self.unit, True, IR_INFO, IR_INFO_COUNT)
             data = ModuleData(info=info)
             if self.info.kind == KIND_SWITCH:
-                config = await self.client.read_registers(self.unit, False, HR_CONFIG, 8)
-                data.outputs = config[HR_OUTPUTS]
-                data.lock_mask = lock_mask(config, self.info.channels)
-                data.timers = await self.client.read_registers(
-                    self.unit, False, HR_TIMER, self.info.channels
-                )
+                await self._read_outputs(data)
             if self.info.has_diag:
                 data.diag = await self.client.read_registers(self.unit, True, IR_DIAG, IR_DIAG_COUNT)
+            # Während der Abfrage geschaltet: Ausgänge könnten veraltet sein, neu lesen
+            for _ in range(3):
+                if self.info.kind != KIND_SWITCH or self._writes == writes:
+                    break
+                writes = self._writes
+                await self._read_outputs(data)
         except ModbusError as err:
             raise UpdateFailed(str(err)) from err
         return data

@@ -56,27 +56,37 @@ class HbwChannelSwitch(HbwEntity, SwitchEntity):
         left = timers[self.channel - 1] if len(timers) >= self.channel else 0
         return {"timer_remaining": left}
 
-    async def _write(self, coro) -> None:
+    async def _write(self, coro, on: bool | None, timer: int = 0) -> None:
+        """Befehl senden und den quittierten Zustand sofort anzeigen.
+        on=None heißt umschalten. Jeder Schaltbefehl beendet einen laufenden
+        Timer im Modul, ein neuer Timer setzt ihn auf `timer`."""
         try:
             await coro
         except ModbusError as err:
             raise HomeAssistantError(f"Kanal {self.channel}: {err}") from err
-        await self.coordinator.async_request_refresh()
+        outputs = self.coordinator.data.outputs
+        if on is None:
+            outputs ^= self._bit
+        elif on:
+            outputs |= self._bit
+        else:
+            outputs &= ~self._bit
+        self.coordinator.note_write(outputs, self.channel, timer)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         c = self.coordinator
-        await self._write(c.client.write_coil(c.unit, self.channel - 1, True))
+        await self._write(c.client.write_coil(c.unit, self.channel - 1, True), True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         c = self.coordinator
-        await self._write(c.client.write_coil(c.unit, self.channel - 1, False))
+        await self._write(c.client.write_coil(c.unit, self.channel - 1, False), False)
 
     async def async_toggle(self, **kwargs: Any) -> None:
         """Umschalten im Modul selbst (HR7), unabhängig vom zuletzt gelesenen Zustand."""
         c = self.coordinator
-        await self._write(c.client.write_register(c.unit, HR_TOGGLE, self._bit))
+        await self._write(c.client.write_register(c.unit, HR_TOGGLE, self._bit), None)
 
     async def async_turn_on_for(self, seconds: int) -> None:
         """Einschalten, das Modul schaltet nach `seconds` Sekunden selbst wieder aus."""
         c = self.coordinator
-        await self._write(c.client.write_register(c.unit, HR_TIMER + self.channel - 1, seconds))
+        await self._write(c.client.write_register(c.unit, HR_TIMER + self.channel - 1, seconds), True, seconds)
