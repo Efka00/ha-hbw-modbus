@@ -110,7 +110,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
 
     # Modulgerät zuerst anlegen, die Kanalgeräte verweisen darauf (via_device)
     dev_reg = dr.async_get(hass)
-    dev_reg.async_get_or_create(config_entry_id=entry.entry_id, **module_device_info(entry, info))
+    module_device = dev_reg.async_get_or_create(config_entry_id=entry.entry_id, **module_device_info(entry, info))
+    coordinator.module_device_id = module_device.id
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Kanalgeräte entfernen, die es nicht mehr gibt (z. B. jetzt Rollladen-Kanäle)

@@ -134,6 +134,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         self.unit = unit
         self.info = info
         self._writes = 0   # zählt Schaltbefehle, erkennt überholte Abfragen
+        self.module_device_id: str | None = None   # Gerät des Moduls (für die Kanalgeräte)
         # Zählermodul: höchster bekannter Zählerstand je Eingang, in HA gespeichert.
         # Meldet das Modul weniger (Impulse seit dem letzten Speichern im Modul
         # beim Stromausfall verloren), wird der Stand zurückgeschrieben.

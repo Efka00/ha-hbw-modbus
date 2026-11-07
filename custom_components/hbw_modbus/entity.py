@@ -45,14 +45,16 @@ def channel_identifier(entry: ConfigEntry, channel: int) -> tuple[str, str]:
     return (DOMAIN, f"{entry.unique_id}_ch{channel}")
 
 
-def channel_device_info(entry: ConfigEntry, unit: int, kind: str, channel: int) -> DeviceInfo:
+def channel_device_info(
+    entry: ConfigEntry, unit: int, kind: str, channel: int, module_device_id: str | None
+) -> DeviceInfo:
     assert entry.unique_id is not None
     return DeviceInfo(
         identifiers={channel_identifier(entry, channel)},
         name=f"{entry.title} {channel_word(kind)} {channel}",
         manufacturer=MANUFACTURER,
         model=module_name(unit, kind),
-        via_device=(DOMAIN, entry.unique_id),
+        via_device_id=module_device_id,
     )
 
 
@@ -70,5 +72,5 @@ class HbwEntity(CoordinatorEntity[HbwCoordinator]):
             self._attr_device_info = module_device_info(entry, coordinator.info)
         else:
             self._attr_device_info = channel_device_info(
-                entry, coordinator.unit, coordinator.info.kind, channel
+                entry, coordinator.unit, coordinator.info.kind, channel, coordinator.module_device_id
             )
