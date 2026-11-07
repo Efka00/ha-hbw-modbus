@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, device_registry as dr, service
 from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .client import HbwModbusClient, ModbusError
@@ -138,3 +139,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool
     if unloaded:
         await release_client(hass, entry.runtime_data.coordinator.client)
     return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> None:
+    """Eintrag gelöscht: gemerkte Zählerstände (Zählermodul) ebenfalls löschen."""
+    await Store(hass, 1, f"{DOMAIN}.{entry.entry_id}").async_remove()
