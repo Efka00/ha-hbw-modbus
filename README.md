@@ -84,7 +84,10 @@ einem Rollladen (Auf, Ab, Stopp, Position). Fahrlogik, Kennlinie und
 Schutzpausen laufen im Modul. Solange die Position nach dem Einrichten oder
 einem Neustart während der Fahrt unbekannt ist, zeigt HA keine Position an;
 die erste Fahrt in eine Endlage macht sie wieder bekannt. Während einer
-Fahrt fragt die Integration jede Sekunde ab. Rollladenmodule (HBW-MB-Bl)
+Fahrt fragt die Integration jede Sekunde ab. Positionen: 0 % = zu, 10 % = Lüftungsschlitze
+ganz offen (ab Firmware HBW-MB-Sw v1.09 / HBW-MB-Bl v1.06, vorher 1 %),
+50 % = Endleiste in der Fenstermitte, 100 % = auf. Dafür muss die „Zeit
+bis Endleiste hebt ab“ eingestellt sein. Rollladenmodule (HBW-MB-Bl)
 kann die Integration noch nicht.
 
 Am Rollladengerät stehen unter „Konfiguration“ die Einstellungen, die das
