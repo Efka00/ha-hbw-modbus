@@ -126,6 +126,13 @@ data:
   Eintrag (gilt für alle Eingänge des Moduls).
 - **Leistung:** aus dem Abstand der letzten beiden Impulse. Kommen keine
   Impulse mehr, sinkt sie mit der Zeit seit dem letzten Impuls ab.
+- **Mindestleistung:** Standard 10 W, einstellbar unter „Konfigurieren“
+  (0 = aus). Leistungen darunter zeigt HA als 0 W. Mit 1 Wh pro Impuls ist
+  kleine Leistung ohnehin erst nach vielen Minuten erkennbar; so fällt die
+  Anzeige nach dem Abschalten in absehbarer Zeit auf 0 (bei 10 W und 1000
+  Impulsen/kWh 6 Minuten nach dem letzten Impuls). Beispiel Waschmaschine:
+  „fertig“, wenn die Leistung 2 Minuten lang 0 W ist. Der Zählerstand zählt
+  immer alles, auch Standby unter der Mindestleistung.
 - **Zählerstand angleichen:**
 
   ```yaml

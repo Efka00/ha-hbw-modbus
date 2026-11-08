@@ -24,7 +24,9 @@ from .client import ModbusConnectionError, ModbusError
 from .const import (
     CONF_DEVICE_ADDRESS,
     CONF_KIND,
+    CONF_MIN_POWER,
     CONF_PULSES_PER_KWH,
+    DEFAULT_MIN_POWER,
     DEFAULT_PORT,
     DEFAULT_PULSES_PER_KWH,
     DOMAIN,
@@ -286,18 +288,30 @@ class HbwModbusConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class HbwOptionsFlow(OptionsFlow):
-    """Zählermodul: Impulse pro kWh (gilt für alle Eingänge)."""
+    """Zählermodul: Impulse pro kWh und Mindestleistung (gelten für alle Eingänge)."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             return self.async_create_entry(
-                data={CONF_PULSES_PER_KWH: int(user_input[CONF_PULSES_PER_KWH])}
+                data={
+                    CONF_PULSES_PER_KWH: int(user_input[CONF_PULSES_PER_KWH]),
+                    CONF_MIN_POWER: int(user_input[CONF_MIN_POWER]),
+                }
             )
-        current = self.config_entry.options.get(CONF_PULSES_PER_KWH, DEFAULT_PULSES_PER_KWH)
+        opts = self.config_entry.options
         schema = vol.Schema(
             {
-                vol.Required(CONF_PULSES_PER_KWH, default=current): selector.NumberSelector(
+                vol.Required(
+                    CONF_PULSES_PER_KWH, default=opts.get(CONF_PULSES_PER_KWH, DEFAULT_PULSES_PER_KWH)
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=1, max=100000, mode=selector.NumberSelectorMode.BOX)
+                ),
+                vol.Required(
+                    CONF_MIN_POWER, default=opts.get(CONF_MIN_POWER, DEFAULT_MIN_POWER)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0, max=1000, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="W"
+                    )
                 ),
             }
         )

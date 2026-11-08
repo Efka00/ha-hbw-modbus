@@ -44,6 +44,11 @@ IR_PULSE = 40          # IR40..55 Impulsabstand ms, IR56..71 seit letztem Impuls
 NO_PULSE = 0xFFFFFFFF
 CONF_PULSES_PER_KWH = "pulses_per_kwh"
 DEFAULT_PULSES_PER_KWH = 1000
+# Leistungen darunter zeigt die Integration als 0 W. Mit 1 Wh pro Impuls ist
+# kleine Leistung ohnehin erst nach vielen Minuten erkennbar; so fällt die
+# Anzeige nach dem Abschalten in absehbarer Zeit auf 0 (10 W: nach 6 min).
+CONF_MIN_POWER = "min_power"
+DEFAULT_MIN_POWER = 10
 
 # Register der Schaltmodul-Firmware (siehe README)
 HR_CONFIG = 0          # HR0..7: ID, Invertierung, Ausgänge, Flags, Rollladen, Umschalten

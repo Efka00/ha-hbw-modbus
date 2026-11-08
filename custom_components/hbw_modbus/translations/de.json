@@ -175,9 +175,10 @@
     "step": {
       "init": {
         "title": "Zählermodul",
-        "description": "Impulse pro kWh der angeschlossenen Zähler (steht auf dem Zähler, z. B. 1000 imp/kWh).",
+        "description": "Gilt für alle Eingänge. Impulse pro kWh stehen auf dem Zähler (z. B. 1000 imp/kWh). Leistungen unter der Mindestleistung zeigt HA als 0 W: Mit 1 Wh pro Impuls ist kleine Leistung erst nach vielen Minuten erkennbar; bei 10 W fällt die Anzeige 6 min nach dem letzten Impuls auf 0. Der Zählerstand zählt immer alles.",
         "data": {
-          "pulses_per_kwh": "Impulse pro kWh"
+          "pulses_per_kwh": "Impulse pro kWh",
+          "min_power": "Mindestleistung (0 = aus)"
         }
       }
     }

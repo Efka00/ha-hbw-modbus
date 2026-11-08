@@ -175,9 +175,10 @@
     "step": {
       "init": {
         "title": "Counter module",
-        "description": "Pulses per kWh of the connected meters (printed on the meter, e.g. 1000 imp/kWh).",
+        "description": "Applies to all inputs. Pulses per kWh are printed on the meter (e.g. 1000 imp/kWh). Power below the minimum is shown as 0 W: with 1 Wh per pulse, low power only becomes visible after many minutes; with 10 W the value drops to 0 six minutes after the last pulse. The meter reading always counts everything.",
         "data": {
-          "pulses_per_kwh": "Pulses per kWh"
+          "pulses_per_kwh": "Pulses per kWh",
+          "min_power": "Minimum power (0 = off)"
         }
       }
     }

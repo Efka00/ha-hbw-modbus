@@ -27,7 +27,9 @@ from . import HbwConfigEntry, is_bus
 from .discovery import STATUSES, HbwBus
 from .client import ModbusError
 from .const import (
+    CONF_MIN_POWER,
     CONF_PULSES_PER_KWH,
+    DEFAULT_MIN_POWER,
     DEFAULT_PULSES_PER_KWH,
     DOMAIN,
     KIND_S0,
@@ -127,9 +129,10 @@ async def async_setup_entry(
     ]
     if coordinator.info.kind == KIND_S0:
         ppk = int(entry.options.get(CONF_PULSES_PER_KWH, DEFAULT_PULSES_PER_KWH))
+        min_power = int(entry.options.get(CONF_MIN_POWER, DEFAULT_MIN_POWER))
         for ch in range(1, coordinator.info.channels + 1):
             entities.append(HbwEnergySensor(coordinator, ch, ppk))
-            entities.append(HbwPowerSensor(coordinator, ch, ppk))
+            entities.append(HbwPowerSensor(coordinator, ch, ppk, min_power))
     async_add_entities(entities)
 
 
@@ -180,7 +183,8 @@ class HbwEnergySensor(HbwEntity, SensorEntity):
 
 class HbwPowerSensor(HbwEntity, SensorEntity):
     """Aktuelle Leistung aus dem Impulsabstand. Kommen keine Impulse mehr,
-    sinkt sie mit der Zeit seit dem letzten Impuls ab."""
+    sinkt sie mit der Zeit seit dem letzten Impuls ab (höchstens 1 Impuls
+    seitdem). Unter der Mindestleistung zeigt sie 0 W."""
 
     _attr_translation_key = "power"
     _attr_device_class = SensorDeviceClass.POWER
@@ -188,10 +192,11 @@ class HbwPowerSensor(HbwEntity, SensorEntity):
     _attr_native_unit_of_measurement = UnitOfPower.WATT
     _attr_suggested_display_precision = 0
 
-    def __init__(self, coordinator: HbwCoordinator, channel: int, pulses_per_kwh: int) -> None:
+    def __init__(self, coordinator: HbwCoordinator, channel: int, pulses_per_kwh: int, min_power: int) -> None:
         super().__init__(coordinator, f"power_{channel}", channel)
         self.channel = channel
         self.ppk = pulses_per_kwh
+        self.min_power = min_power
 
     @property
     def native_value(self) -> float | None:
@@ -204,7 +209,8 @@ class HbwPowerSensor(HbwEntity, SensorEntity):
         ms = max(d.intervals[self.channel - 1], since)
         if ms <= 0:
             return None
-        return 3_600_000_000 / (self.ppk * ms)
+        watts = 3_600_000_000 / (self.ppk * ms)
+        return 0.0 if watts < self.min_power else watts
 
 
 class HbwSearchStatus(SensorEntity):
