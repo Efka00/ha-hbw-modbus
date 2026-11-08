@@ -14,9 +14,39 @@ MQTT-Broker, keine weitere Software.
 Repositories → `Efka00/ha-hbw-modbus`, Typ „Integration“. Dann „HBW
 Modbus“ herunterladen und Home Assistant neu starten.
 
-## Modul hinzufügen
+## Module hinzufügen
 
-Einstellungen → Geräte & Dienste → Integration hinzufügen → „HBW Modbus“:
+### Automatisch über den Bus (empfohlen)
+
+Ist ein Modul eingerichtet, bietet HA den **Bus** des Gateways als
+„Gefunden“ an (oder von Hand: Integration hinzufügen → „HBW Modbus“ →
+„Bus hinzufügen“). Das Bus-Gerät `HBW-Bus 192.168.1.42` hat zwei Knöpfe:
+
+| Knopf | Was passiert |
+|---|---|
+| Neues Modul suchen | eine Anfrage an die Service-ID 247 – dort meldet sich ein frisch geflashter Nano |
+| Bus durchsuchen | alle IDs 1–247 außer den schon eingerichteten, je höchstens 0,3 s (gut eine Minute) |
+
+Von sich aus fragt der Bus nichts ab: Ein Modbus-Modul antwortet nur, wenn
+es gefragt wird, und der Bus soll schlank bleiben. Das Ergebnis der Suche
+steht in einer Benachrichtigung.
+
+Gefundene Module erscheinen unter Einstellungen → Geräte & Dienste als
+„Gefunden“ und werden erst nach **Rückfrage** eingerichtet:
+
+- Modul mit eigener ID (z. B. ein umgeflashtes HBW-Modul, das seine
+  A-Nummer übernommen hat): bestätigen, fertig.
+- Modul unter ID 247: Die Rückfrage schlägt die nächste freie ID vor
+  (Schalt- und Rollladenmodule ab 1, Zähler ab 101). Vor dem Schreiben
+  prüft die Integration, dass am Bus niemand unter der neuen ID antwortet;
+  danach, dass das Modul unter ihr antwortet.
+
+Neue Nanos nacheinander anschließen: Zwei Module unter ID 247 antworten
+gleichzeitig und stören sich.
+
+### Von Hand
+
+Integration hinzufügen → „HBW Modbus“ → „Modul hinzufügen“:
 
 | Feld | Inhalt |
 |---|---|

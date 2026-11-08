@@ -6,11 +6,16 @@ from dataclasses import dataclass
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SOURCE_INTEGRATION_DISCOVERY, ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import config_validation as cv, device_registry as dr, service
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    discovery_flow,
+    service,
+)
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
@@ -20,17 +25,22 @@ from .const import (
     ATTR_SECONDS,
     ATTR_VALUE,
     CONF_DEVICE_ADDRESS,
+    CONF_KIND,
     DEFAULT_TIMEOUT,
     DOMAIN,
+    KIND_BUS,
+    MANUFACTURER,
     KIND_S0,
     KIND_SWITCH,
     SERVICE_SET_METER_READING,
     SERVICE_TURN_ON_FOR,
 )
 from .coordinator import HbwCoordinator, probe_module
+from .discovery import HbwBus, bus_unique_id
 from .entity import blind_identifier, channel_identifier, module_device_info
 
 PLATFORMS: list[Platform] = [Platform.COVER, Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
+BUS_PLATFORMS: list[Platform] = [Platform.BUTTON]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -61,7 +71,11 @@ class HbwRuntime:
     coordinator: HbwCoordinator
 
 
-type HbwConfigEntry = ConfigEntry[HbwRuntime]
+type HbwConfigEntry = ConfigEntry[HbwRuntime | HbwBus]
+
+
+def is_bus(entry: ConfigEntry) -> bool:
+    return entry.data.get(CONF_KIND) == KIND_BUS
 
 
 def _gateways(hass: HomeAssistant) -> dict[str, list]:
@@ -89,7 +103,38 @@ async def release_client(hass: HomeAssistant, client: HbwModbusClient) -> None:
         await client.close()
 
 
+async def _async_setup_bus(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
+    """Bus-Eintrag: nur das Gerät mit den Such-Knöpfen, ohne eigene Abfragen."""
+    client = acquire_client(hass, entry.data[CONF_HOST], entry.data[CONF_PORT])
+    entry.runtime_data = HbwBus(hass, entry, client)
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.unique_id)},
+        name=entry.title,
+        manufacturer=MANUFACTURER,
+        model="RS485-Bus",
+        configuration_url=f"http://{entry.data[CONF_HOST]}",
+    )
+    await hass.config_entries.async_forward_entry_setups(entry, BUS_PLATFORMS)
+    return True
+
+
+def _offer_bus(hass: HomeAssistant, host: str, port: int) -> None:
+    """Gibt es zum Gateway noch keinen Bus-Eintrag, ihn als gefunden anbieten."""
+    uid = bus_unique_id(host, port)
+    if any(e.unique_id == uid for e in hass.config_entries.async_entries(DOMAIN)):
+        return
+    discovery_flow.async_create_flow(
+        hass,
+        DOMAIN,
+        context={"source": SOURCE_INTEGRATION_DISCOVERY},
+        data={CONF_HOST: host, CONF_PORT: port, CONF_KIND: KIND_BUS},
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
+    if is_bus(entry):
+        return await _async_setup_bus(hass, entry)
     client = acquire_client(hass, entry.data[CONF_HOST], entry.data[CONF_PORT])
     unit = entry.data[CONF_DEVICE_ADDRESS]
     try:
@@ -128,6 +173,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
     for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
         if not device.identifiers & expected:
             dev_reg.async_remove_device(device.id)
+    _offer_bus(hass, entry.data[CONF_HOST], entry.data[CONF_PORT])
     return True
 
 
@@ -137,12 +183,16 @@ async def _options_updated(hass: HomeAssistant, entry: HbwConfigEntry) -> None:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
-    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    bus = is_bus(entry)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, BUS_PLATFORMS if bus else PLATFORMS)
     if unloaded:
-        await release_client(hass, entry.runtime_data.coordinator.client)
+        runtime = entry.runtime_data
+        await release_client(hass, runtime.client if isinstance(runtime, HbwBus) else runtime.coordinator.client)
     return unloaded
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> None:
     """Eintrag gelöscht: gemerkte Zählerstände (Zählermodul) ebenfalls löschen."""
+    if is_bus(entry):
+        return
     await Store(hass, 1, f"{DOMAIN}.{entry.entry_id}").async_remove()

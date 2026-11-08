@@ -1,7 +1,15 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
+        "title": "HBW Modbus",
+        "menu_options": {
+          "module": "Add module (Modbus ID known)",
+          "bus": "Add bus (search for new modules)"
+        }
+      },
+      "module": {
         "title": "Add HBW-MB module",
         "description": "Modbus gateway (e.g. Waveshare RS485 TO ETH in Modbus TCP to RTU mode) and the module's Modbus ID.",
         "data": {
@@ -10,14 +18,47 @@
           "device_address": "Modbus ID",
           "name": "Name (empty = HBWMB_A + Modbus ID, counters from ID 101: HBWMB_S01 …)"
         }
+      },
+      "bus": {
+        "title": "Add bus",
+        "description": "Gateway the modules are connected to. The bus gets the buttons “Search for new module” and “Scan bus”. It does not poll anything on its own.",
+        "data": {
+          "host": "Gateway (IP or host name)",
+          "port": "Port"
+        }
+      },
+      "bus_confirm": {
+        "title": "Add bus?",
+        "description": "HBW-MB modules are connected to gateway {host}. The bus device lets you search for new modules at the push of a button; without that it does not poll anything."
+      },
+      "discovery_confirm": {
+        "title": "Module found",
+        "description": "{model} at Modbus ID {unit}, firmware {firmware}, HBW address {hbw_address}. Add it?",
+        "data": {
+          "name": "Name"
+        }
+      },
+      "assign_id": {
+        "title": "New module: assign ID",
+        "description": "{model}, firmware {firmware}, HBW address {hbw_address}, still answers at service ID 247. The new ID is written to the module and saved there. Suggested is the next free ID (switch/blind modules from 1, counters from 101).",
+        "data": {
+          "device_address": "New Modbus ID",
+          "name": "Name (empty = HBWMB_A + Modbus ID, counters: HBWMB_S01 …)"
+        }
       }
     },
     "error": {
       "cannot_connect": "The module does not answer. Check gateway, port and Modbus ID.",
-      "blind_not_supported": "Blind modules (HBW-MB-Bl) are not supported yet."
+      "blind_not_supported": "Blind modules (HBW-MB-Bl) are not supported yet.",
+      "id_configured": "This ID is already configured in HA for another module.",
+      "id_in_use": "A device on the bus already answers at this ID.",
+      "no_answer": "The module did not answer when writing the ID. Is it still connected?",
+      "assign_failed": "The ID was written, but the module does not answer at the new ID."
     },
     "abort": {
-      "already_configured": "This module is already configured."
+      "already_configured": "This module is already configured.",
+      "already_in_progress": "A confirmation for this module is already pending.",
+      "blind_not_supported": "Blind modules (HBW-MB-Bl) are not supported yet."
     }
   },
   "entity": {
@@ -75,6 +116,14 @@
       },
       "reference_after": {
         "name": "Reference run after moves"
+      }
+    },
+    "button": {
+      "search_new": {
+        "name": "Search for new module"
+      },
+      "scan_bus": {
+        "name": "Scan bus"
       }
     }
   },

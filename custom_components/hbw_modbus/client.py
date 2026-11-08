@@ -49,6 +49,7 @@ class HbwModbusClient:
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._tid = 0
+        self._clean = True   # False, solange eine Antwort halb gelesen ist
 
     async def close(self) -> None:
         """Verbindung schließen."""
@@ -64,21 +65,31 @@ class HbwModbusClient:
             except OSError:
                 pass
 
-    async def _request(self, unit: int, pdu: bytes, retry: bool) -> bytes:
+    async def _request(
+        self, unit: int, pdu: bytes, retry: bool, timeout: float | None = None, probe: bool = False
+    ) -> bytes:
+        """probe: Suche nach Modulen. Bleibt die Antwort aus, ist die ID nur frei –
+        die Verbindung bleibt dann offen (eine verspätete Antwort wird später als
+        fremde Antwort verworfen)."""
         async with self._lock:
             for attempt in range(2 if retry else 1):
                 try:
-                    return await self._transact(unit, pdu)
-                except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError) as err:
+                    return await self._transact(unit, pdu, timeout or self.timeout)
+                except asyncio.TimeoutError as err:
+                    if not (probe and self._clean and self._writer is not None):
+                        await self._close()
+                    last = err
+                except (OSError, asyncio.IncompleteReadError) as err:
                     await self._close()
                     last = err
             raise ModbusConnectionError(
                 f"{self.host}:{self.port} ID {unit}: {type(last).__name__} {last}"
             ) from last
 
-    async def _transact(self, unit: int, pdu: bytes) -> bytes:
+    async def _transact(self, unit: int, pdu: bytes, timeout: float) -> bytes:
         loop = asyncio.get_running_loop()
         if self._writer is None:
+            self._clean = True
             self._reader, self._writer = await asyncio.wait_for(
                 asyncio.open_connection(self.host, self.port), self.timeout
             )
@@ -87,14 +98,16 @@ class HbwModbusClient:
         tid = self._tid
         self._writer.write(struct.pack(">HHHB", tid, 0, len(pdu) + 1, unit) + pdu)
         await self._writer.drain()
-        deadline = loop.time() + self.timeout
+        deadline = loop.time() + timeout
         while True:
             remaining = max(deadline - loop.time(), 0.001)
             header = await asyncio.wait_for(self._reader.readexactly(7), remaining)
+            self._clean = False
             rtid, proto, length, runit = struct.unpack(">HHHB", header)
             if proto != 0 or not 2 <= length <= 260:
                 raise OSError("ungültiger MBAP-Kopf")
             body = await asyncio.wait_for(self._reader.readexactly(length - 1), remaining)
+            self._clean = True
             if rtid != tid or runit != unit or (body[0] & 0x7F) != pdu[0]:
                 _LOGGER.debug("Fremde Antwort verworfen: tid %s, ID %s", rtid, runit)
                 continue
@@ -102,10 +115,21 @@ class HbwModbusClient:
                 raise ModbusExceptionResponse(body[1] if len(body) > 1 else 0)
             return body
 
-    async def read_registers(self, unit: int, input_regs: bool, address: int, count: int) -> list[int]:
-        """Holding- (FC03) oder Input-Register (FC04) lesen."""
+    async def read_registers(
+        self,
+        unit: int,
+        input_regs: bool,
+        address: int,
+        count: int,
+        timeout: float | None = None,
+        probe: bool = False,
+    ) -> list[int]:
+        """Holding- (FC03) oder Input-Register (FC04) lesen. probe: einmalige,
+        kurze Anfrage bei der Suche nach Modulen (kein Wiederholversuch)."""
         fc = FC_READ_INPUT if input_regs else FC_READ_HOLDING
-        body = await self._request(unit, struct.pack(">BHH", fc, address, count), retry=True)
+        body = await self._request(
+            unit, struct.pack(">BHH", fc, address, count), retry=not probe, timeout=timeout, probe=probe
+        )
         if len(body) != 2 + 2 * count or body[1] != 2 * count:
             raise ModbusError("Antwort hat die falsche Länge")
         return list(struct.unpack(f">{count}H", body[2:]))

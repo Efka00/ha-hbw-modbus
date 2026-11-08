@@ -14,7 +14,21 @@ SCAN_INTERVAL = timedelta(seconds=5)
 KIND_SWITCH = "sw"  # HBW-MB-Sw (Schaltmodul)
 KIND_BLIND = "bl"   # HBW-MB-Bl (Rollladenmodul)
 KIND_S0 = "s0"      # HBW-MB-S0 (S0-Impulszähler)
+KIND_BUS = "bus"    # kein Modul: der Bus am Gateway (Suche nach neuen Modulen)
 CONF_KIND = "kind"
+
+# Suche nach Modulen: neue Nanos melden sich unter der Service-ID 247.
+# Bei freien IDs wartet der Waveshare selbst ~200 ms, bevor er die nächste
+# Anfrage auf den Bus gibt.
+SERVICE_ID = 247
+PROBE_TIMEOUT = 0.3
+SEARCH_TIMEOUT = 1.0
+# Bereiche, aus denen eine neue ID vorgeschlagen wird (A = Ausgänge, S = Zähler)
+ID_RANGES = {
+    KIND_SWITCH: range(1, 100),
+    KIND_BLIND: range(1, 100),
+    KIND_S0: range(101, 151),
+}
 
 # IR7 = Modultyp (ab HBW-MB-S0; ältere Firmware kennt IR7 nicht)
 IR_MODULE_TYPE = 7

@@ -1,7 +1,15 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
+        "title": "HBW Modbus",
+        "menu_options": {
+          "module": "Modul hinzufügen (Modbus-ID bekannt)",
+          "bus": "Bus hinzufügen (Suche nach neuen Modulen)"
+        }
+      },
+      "module": {
         "title": "HBW-MB-Modul hinzufügen",
         "description": "Modbus-Gateway (z. B. Waveshare RS485 TO ETH im Modus Modbus TCP to RTU) und Modbus-ID des Moduls.",
         "data": {
@@ -10,14 +18,47 @@
           "device_address": "Modbus-ID",
           "name": "Name (leer = HBWMB_A + Modbus-ID, Zähler ab ID 101: HBWMB_S01 …)"
         }
+      },
+      "bus": {
+        "title": "Bus hinzufügen",
+        "description": "Gateway, an dem die Module hängen. Der Bus bekommt die Knöpfe „Neues Modul suchen“ und „Bus durchsuchen“. Er fragt von sich aus nichts ab.",
+        "data": {
+          "host": "Gateway (IP oder Name)",
+          "port": "Port"
+        }
+      },
+      "bus_confirm": {
+        "title": "Bus hinzufügen?",
+        "description": "Am Gateway {host} hängen HBW-MB-Module. Mit dem Bus-Gerät kannst du per Knopf nach neuen Modulen suchen. Ohne Knopfdruck fragt er nichts ab."
+      },
+      "discovery_confirm": {
+        "title": "Modul gefunden",
+        "description": "{model} unter Modbus-ID {unit}, Firmware {firmware}, HBW-Adresse {hbw_address}. Hinzufügen?",
+        "data": {
+          "name": "Name"
+        }
+      },
+      "assign_id": {
+        "title": "Neues Modul: ID vergeben",
+        "description": "{model}, Firmware {firmware}, HBW-Adresse {hbw_address}, meldet sich noch unter der Service-ID 247. Die neue ID wird ins Modul geschrieben und dort gespeichert. Vorgeschlagen ist die nächste freie ID (Schalt-/Rollladenmodule ab 1, Zähler ab 101).",
+        "data": {
+          "device_address": "Neue Modbus-ID",
+          "name": "Name (leer = HBWMB_A + Modbus-ID, Zähler: HBWMB_S01 …)"
+        }
       }
     },
     "error": {
       "cannot_connect": "Das Modul antwortet nicht. Gateway, Port und Modbus-ID prüfen.",
-      "blind_not_supported": "Rollladenmodule (HBW-MB-Bl) werden noch nicht unterstützt."
+      "blind_not_supported": "Rollladenmodule (HBW-MB-Bl) werden noch nicht unterstützt.",
+      "id_configured": "Diese ID ist in HA schon für ein anderes Modul eingerichtet.",
+      "id_in_use": "Unter dieser ID antwortet am Bus schon ein Gerät.",
+      "no_answer": "Das Modul hat auf das Schreiben der ID nicht geantwortet. Hängt es noch am Bus?",
+      "assign_failed": "Die ID wurde geschrieben, das Modul antwortet aber nicht unter der neuen ID."
     },
     "abort": {
-      "already_configured": "Dieses Modul ist schon eingerichtet."
+      "already_configured": "Dieses Modul ist schon eingerichtet.",
+      "already_in_progress": "Für dieses Modul läuft schon eine Rückfrage.",
+      "blind_not_supported": "Rollladenmodule (HBW-MB-Bl) werden noch nicht unterstützt."
     }
   },
   "entity": {
@@ -75,6 +116,14 @@
       },
       "reference_after": {
         "name": "Referenzfahrt nach Zwischenfahrten"
+      }
+    },
+    "button": {
+      "search_new": {
+        "name": "Neues Modul suchen"
+      },
+      "scan_bus": {
+        "name": "Bus durchsuchen"
       }
     }
   },

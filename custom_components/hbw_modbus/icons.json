@@ -1,0 +1,12 @@
+{
+  "entity": {
+    "button": {
+      "search_new": {
+        "default": "mdi:magnify-plus-outline"
+      },
+      "scan_bus": {
+        "default": "mdi:magnify-scan"
+      }
+    }
+  }
+}
