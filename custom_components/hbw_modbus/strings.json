@@ -49,7 +49,6 @@
     },
     "error": {
       "cannot_connect": "The module does not answer. Check gateway, port and Modbus ID.",
-      "blind_not_supported": "Blind modules (HBW-MB-Bl) are not supported yet.",
       "id_configured": "This ID is already configured in HA for another module.",
       "id_in_use": "A device on the bus already answers at this ID.",
       "no_answer": "The module did not answer when writing the ID. Is it still connected?",
@@ -58,8 +57,7 @@
     },
     "abort": {
       "already_configured": "This module is already configured.",
-      "already_in_progress": "A confirmation for this module is already pending.",
-      "blind_not_supported": "Blind modules (HBW-MB-Bl) are not supported yet."
+      "already_in_progress": "A confirmation for this module is already pending."
     }
   },
   "entity": {
@@ -102,6 +100,7 @@
           "running": "Running",
           "nothing": "Nothing found",
           "found": "New module found",
+          "other": "Found, cannot be set up",
           "error": "Error"
         },
         "state_attributes": {

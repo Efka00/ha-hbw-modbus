@@ -59,16 +59,21 @@ HR_TOGGLE = 7
 HR_TIMER = 20          # HR20..20+N-1: Timer in s
 IR_INFO = 0            # IR0..6: Version, Kanäle, HBW-Adresse, Laufzeit, CRC, Speicherzähler
 IR_INFO_COUNT = 7
+IR_INFO_COUNT_BL = 6   # HBW-MB-Bl hat kein IR6
 IR_DIAG = 30           # IR30..35 ab HBW-MB-Sw v1.08 / HBW-MB-Bl v1.05
 IR_DIAG_COUNT = 6
 
-# Rollladen auf einem Schaltmodul (Register wie HBW-MB-Bl für Rollladen 1)
-HR_BLIND_CMD = 10      # schreiben: 0 zu, 1 auf, 2 Stopp; lesen: Status
-HR_BLIND_POS = 11      # schreiben: Position 0..100 anfahren
-HR_BLIND_PAR = 12      # HR12..18: Fahrzeiten und Kennlinie (gespeichert)
+# Rollladen n (1..4 beim HBW-MB-Bl, nur 1 auf dem Schaltmodul): Register ab 10·n
+HR_BLIND_CMD = 0       # +0 schreiben: 0 zu, 1 auf, 2 Stopp; lesen: Status
+HR_BLIND_POS = 1       # +1 schreiben: Position 0..100 anfahren
+HR_BLIND_PAR = 2       # +2..+8: Fahrzeiten und Kennlinie (gespeichert)
 BLIND_PAR_COUNT = 7
-IR_BLIND = 10          # IR10..26: Position (10), Status (14), bekannt (18), Einlernschritt (22), Zwischenfahrten (26)
-IR_BLIND_COUNT = 17
+# IR10..: je Wert ein Block mit 4 Einträgen (Rollladen 1..4): Position,
+# Status, bekannt, Einlernschritt, Zwischenfahrten. Das Schaltmodul hat nur
+# Rollladen 1, die Abstände sind gleich (IR10, 14, 18, 22, 26).
+IR_BLIND = 10
+BLIND_STRIDE = 4
+BLIND_VALUES = 5
 BLIND_CLOSED, BLIND_OPEN, BLIND_OPENING, BLIND_CLOSING = 0, 1, 2, 3
 SCAN_INTERVAL_MOVING = timedelta(seconds=1)
 

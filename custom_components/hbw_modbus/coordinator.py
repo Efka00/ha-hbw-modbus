@@ -36,9 +36,11 @@ from .const import (
     BLIND_CLOSING,
     BLIND_OPENING,
     IR_BLIND,
-    IR_BLIND_COUNT,
+    IR_INFO_COUNT_BL,
     HR_BLIND_PAR,
     BLIND_PAR_COUNT,
+    BLIND_STRIDE,
+    BLIND_VALUES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -84,12 +86,13 @@ class ModuleData:
     counts: list[int] = field(default_factory=list)     # Zählerstände (Impulse)
     intervals: list[int] = field(default_factory=list)  # ms zwischen den letzten Impulsen
     since: list[int] = field(default_factory=list)      # ms seit dem letzten Impuls
-    blind: dict[str, int] | None = None                 # Rollladen auf dem Schaltmodul
-    blind_par: list[int] = field(default_factory=list)  # HR12..18 (Fahrzeiten usw.)
+    # Rollläden: beim Rollladenmodul 1..4, beim Schaltmodul höchstens einer
+    blinds: list[dict[str, int]] = field(default_factory=list)
+    blind_par: list[list[int]] = field(default_factory=list)  # je Rollladen HR10n+2..8
 
     @property
     def blind_moving(self) -> bool:
-        return self.blind is not None and self.blind["status"] in (BLIND_OPENING, BLIND_CLOSING)
+        return any(b["status"] in (BLIND_OPENING, BLIND_CLOSING) for b in self.blinds)
 
 
 def _u32(regs: list[int], n: int) -> list[int]:
@@ -155,6 +158,9 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
         self._setup_lock: int | None = None   # Rollladen-Kanäle beim Einrichten
         self._reload_scheduled = False
+        # Rollladen-Einstellungen ändern sich nur über HA oder eine Einlernfahrt:
+        # einmal lesen, danach nur nach dem Ende einer Einlernfahrt (Bus schlank)
+        self._blind_par: list[list[int]] | None = None
 
     def _module_changed(self, why: str) -> None:
         """Modul hat sich geändert (Firmware, Kanäle, Rollladen): Eintrag neu laden,
@@ -165,13 +171,45 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         _LOGGER.info("%s: %s, Integration wird neu geladen", self.name, why)
         self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
 
-    async def async_set_blind_par(self, index: int, value: int) -> None:
-        """Rollladen-Parameter (0 = HR12 … 6 = HR18) schreiben, sofort anzeigen."""
-        await self.client.write_register(self.unit, HR_BLIND_PAR + index, value)
-        if self.data is not None and len(self.data.blind_par) > index:
-            par = list(self.data.blind_par)
-            par[index] = value
+    @property
+    def blind_count(self) -> int:
+        """Zahl der Rollläden: alle beim Rollladenmodul, 0 oder 1 beim Schaltmodul."""
+        if self.info.kind == KIND_BLIND:
+            return self.info.channels
+        return 1 if self.data is not None and self.data.lock_mask else 0
+
+    async def async_set_blind_par(self, blind: int, index: int, value: int) -> None:
+        """Parameter (0 = HR10n+2 … 6 = HR10n+8) von Rollladen n schreiben, sofort anzeigen."""
+        await self.client.write_register(self.unit, 10 * blind + HR_BLIND_PAR + index, value)
+        if self._blind_par is not None and len(self._blind_par) >= blind:
+            self._blind_par[blind - 1][index] = value
+        if self.data is not None and len(self.data.blind_par) >= blind:
+            par = [list(p) for p in self.data.blind_par]
+            par[blind - 1][index] = value
             self.async_set_updated_data(replace(self.data, blind_par=par))
+
+    async def _read_blinds(self, data: ModuleData, count: int) -> None:
+        b = await self.client.read_registers(
+            self.unit, True, IR_BLIND, (BLIND_VALUES - 1) * BLIND_STRIDE + count
+        )
+        data.blinds = [
+            {
+                "position": b[i],
+                "status": b[BLIND_STRIDE + i],
+                "known": b[2 * BLIND_STRIDE + i],
+                "teach": b[3 * BLIND_STRIDE + i],
+                "moves": b[4 * BLIND_STRIDE + i],
+            }
+            for i in range(count)
+        ]
+        old = self.data.blinds if self.data is not None else []
+        taught = any(i < len(old) and old[i]["teach"] and not b["teach"] for i, b in enumerate(data.blinds))
+        if self._blind_par is None or len(self._blind_par) != count or taught:
+            self._blind_par = [
+                await self.client.read_registers(self.unit, False, 10 * n + HR_BLIND_PAR, BLIND_PAR_COUNT)
+                for n in range(1, count + 1)
+            ]
+        data.blind_par = [list(p) for p in self._blind_par]
 
     async def async_load_counts(self) -> None:
         stored = await self._store.async_load()
@@ -240,7 +278,9 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
     async def _async_update_data(self) -> ModuleData:
         writes = self._writes
         try:
-            info = await self.client.read_registers(self.unit, True, IR_INFO, IR_INFO_COUNT)
+            info = await self.client.read_registers(
+                self.unit, True, IR_INFO, IR_INFO_COUNT_BL if self.info.kind == KIND_BLIND else IR_INFO_COUNT
+            )
             if info[0] != self.info.firmware:
                 self._module_changed(f"Firmware {self.info.firmware_str} -> {info[0] >> 8}.{info[0] & 0xFF:02d}")
             elif info[1] != self.info.channels or ((info[2] << 16) | info[3]) != self.info.hbw_address:
@@ -256,15 +296,13 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
             if self.info.kind == KIND_SWITCH:
                 await self._read_outputs(data)
                 if data.lock_mask:
-                    b = await self.client.read_registers(self.unit, True, IR_BLIND, IR_BLIND_COUNT)
-                    data.blind = {"position": b[0], "status": b[4], "known": b[8], "teach": b[12], "moves": b[16]}
-                    data.blind_par = await self.client.read_registers(
-                        self.unit, False, HR_BLIND_PAR, BLIND_PAR_COUNT
-                    )
+                    await self._read_blinds(data, 1)
                 if self._setup_lock is None:
                     self._setup_lock = data.lock_mask
                 elif data.lock_mask != self._setup_lock:
                     self._module_changed("Rollladen-Kanäle geändert")
+            if self.info.kind == KIND_BLIND:
+                await self._read_blinds(data, self.info.channels)
             if self.info.has_diag:
                 data.diag = await self.client.read_registers(self.unit, True, IR_DIAG, IR_DIAG_COUNT)
             # Während der Abfrage geschaltet: Ausgänge könnten veraltet sein, neu lesen

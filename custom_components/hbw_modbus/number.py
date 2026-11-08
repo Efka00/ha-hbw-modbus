@@ -1,4 +1,4 @@
-"""Einstellungen des Rollladens auf einem Schaltmodul: Fahrzeiten und Kennlinie (HR12..18)."""
+"""Einstellungen je Rollladen: Fahrzeiten und Kennlinie (HR10n+2..8)."""
 
 from __future__ import annotations
 
@@ -12,14 +12,13 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import HbwConfigEntry
 from .client import ModbusError
-from .const import KIND_SWITCH
 from .coordinator import HbwCoordinator
 from .entity import HbwEntity
 
 
 @dataclass(frozen=True, kw_only=True)
 class BlindParDescription(NumberEntityDescription):
-    index: int          # 0 = HR12 … 6 = HR18
+    index: int          # 0 = HR10n+2 … 6 = HR10n+8
     scale: float = 1.0  # Registerwert = Anzeigewert × scale
 
 
@@ -56,8 +55,9 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: HbwConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data.coordinator
-    if coordinator.info.kind == KIND_SWITCH and coordinator.data.lock_mask:
-        async_add_entities(BlindParNumber(coordinator, d) for d in BLIND_PARS)
+    async_add_entities(
+        BlindParNumber(coordinator, n, d) for n in range(1, coordinator.blind_count + 1) for d in BLIND_PARS
+    )
 
 
 class BlindParNumber(HbwEntity, NumberEntity):
@@ -65,21 +65,22 @@ class BlindParNumber(HbwEntity, NumberEntity):
 
     entity_description: BlindParDescription
 
-    def __init__(self, coordinator: HbwCoordinator, description: BlindParDescription) -> None:
-        super().__init__(coordinator, f"blind1_{description.key}", blind=True)
+    def __init__(self, coordinator: HbwCoordinator, blind: int, description: BlindParDescription) -> None:
+        super().__init__(coordinator, f"blind{blind}_{description.key}", blind=blind)
         self.entity_description = description
+        self.blind = blind
 
     @property
     def native_value(self) -> float | None:
-        par = self.coordinator.data.blind_par
+        pars = self.coordinator.data.blind_par
         d = self.entity_description
-        if len(par) <= d.index:
+        if len(pars) < self.blind or len(pars[self.blind - 1]) <= d.index:
             return None
-        return par[d.index] / d.scale
+        return pars[self.blind - 1][d.index] / d.scale
 
     async def async_set_native_value(self, value: float) -> None:
         d = self.entity_description
         try:
-            await self.coordinator.async_set_blind_par(d.index, round(value * d.scale))
+            await self.coordinator.async_set_blind_par(self.blind, d.index, round(value * d.scale))
         except ModbusError as err:
             raise HomeAssistantError(f"Rollladen: {err}") from err

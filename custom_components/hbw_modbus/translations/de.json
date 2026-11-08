@@ -49,7 +49,6 @@
     },
     "error": {
       "cannot_connect": "Das Modul antwortet nicht. Gateway, Port und Modbus-ID prüfen.",
-      "blind_not_supported": "Rollladenmodule (HBW-MB-Bl) werden noch nicht unterstützt.",
       "id_configured": "Diese ID ist in HA schon für ein anderes Modul eingerichtet.",
       "id_in_use": "Unter dieser ID antwortet am Bus schon ein Gerät.",
       "no_answer": "Das Modul hat auf das Schreiben der ID nicht geantwortet. Hängt es noch am Bus?",
@@ -58,8 +57,7 @@
     },
     "abort": {
       "already_configured": "Dieses Modul ist schon eingerichtet.",
-      "already_in_progress": "Für dieses Modul läuft schon eine Rückfrage.",
-      "blind_not_supported": "Rollladenmodule (HBW-MB-Bl) werden noch nicht unterstützt."
+      "already_in_progress": "Für dieses Modul läuft schon eine Rückfrage."
     }
   },
   "entity": {
@@ -102,6 +100,7 @@
           "running": "Läuft",
           "nothing": "Nichts gefunden",
           "found": "Neues Modul gefunden",
+          "other": "Gefunden, nicht einrichtbar",
           "error": "Fehler"
         },
         "state_attributes": {

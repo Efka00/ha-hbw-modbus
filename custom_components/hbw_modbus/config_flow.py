@@ -33,7 +33,6 @@ from .const import (
     HR_CONFIG,
     ID_RANGES,
     IR_INFO,
-    KIND_BLIND,
     KIND_BUS,
     KIND_S0,
     SEARCH_TIMEOUT,
@@ -106,9 +105,6 @@ class HbwModbusConfigFlow(ConfigFlow, domain=DOMAIN):
                 info = await probe_module(client, unit)
             except ModbusError:
                 errors["base"] = "cannot_connect"
-            else:
-                if info.kind == KIND_BLIND:
-                    errors["base"] = "blind_not_supported"
             finally:
                 await release_client(self.hass, client)
             if not errors:
@@ -170,8 +166,6 @@ class HbwModbusConfigFlow(ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
             self.context["title_placeholders"] = {"name": f"HBW-Bus {host}"}
             return await self.async_step_bus_confirm()
-        if kind == KIND_BLIND:
-            return self.async_abort(reason="blind_not_supported")
         unit = discovery_info[CONF_DEVICE_ADDRESS]
         self._info = ModuleInfo(
             kind=kind,

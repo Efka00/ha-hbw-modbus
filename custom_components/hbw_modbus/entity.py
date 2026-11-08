@@ -13,7 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, KIND_S0, MANUFACTURER
+from .const import DOMAIN, KIND_BLIND, KIND_S0, MANUFACTURER
 from .coordinator import HbwCoordinator, ModuleInfo
 
 
@@ -58,15 +58,18 @@ def channel_device_info(
     )
 
 
-def blind_identifier(entry: ConfigEntry) -> tuple[str, str]:
-    return (DOMAIN, f"{entry.unique_id}_blind1")
+def blind_identifier(entry: ConfigEntry, blind: int = 1) -> tuple[str, str]:
+    return (DOMAIN, f"{entry.unique_id}_blind{blind}")
 
 
-def blind_device_info(entry: ConfigEntry, unit: int, kind: str, module_device_id: str | None) -> DeviceInfo:
-    """Rollladen auf zwei Kanälen eines Schaltmoduls als eigenes Gerät."""
+def blind_device_info(
+    entry: ConfigEntry, unit: int, kind: str, blind: int, module_device_id: str | None
+) -> DeviceInfo:
+    """Rollladen als eigenes Gerät: „HBWMB_A04 Rollladen 2“ beim Rollladenmodul,
+    „HBWMB_A03 Rollladen“ auf zwei Kanälen eines Schaltmoduls."""
     return DeviceInfo(
-        identifiers={blind_identifier(entry)},
-        name=f"{entry.title} Rollladen",
+        identifiers={blind_identifier(entry, blind)},
+        name=f"{entry.title} Rollladen {blind}" if kind == KIND_BLIND else f"{entry.title} Rollladen",
         manufacturer=MANUFACTURER,
         model=module_name(unit, kind),
         via_device_id=module_device_id,
@@ -79,7 +82,7 @@ class HbwEntity(CoordinatorEntity[HbwCoordinator]):
     _attr_has_entity_name = True
 
     def __init__(
-        self, coordinator: HbwCoordinator, key: str, channel: int | None = None, blind: bool = False
+        self, coordinator: HbwCoordinator, key: str, channel: int | None = None, blind: int = 0
     ) -> None:
         super().__init__(coordinator)
         entry = coordinator.config_entry
@@ -87,7 +90,7 @@ class HbwEntity(CoordinatorEntity[HbwCoordinator]):
         self._attr_unique_id = f"{entry.unique_id}_{key}"
         if blind:
             self._attr_device_info = blind_device_info(
-                entry, coordinator.unit, coordinator.info.kind, coordinator.module_device_id
+                entry, coordinator.unit, coordinator.info.kind, blind, coordinator.module_device_id
             )
         elif channel is None:
             self._attr_device_info = module_device_info(entry, coordinator.info)

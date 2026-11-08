@@ -1,4 +1,5 @@
-"""Rollladen auf zwei Kanälen eines Schaltmoduls (HBW-MB-Sw ab v1.06)."""
+"""Rollläden: 1..4 am Rollladenmodul (HBW-MB-Bl) oder einer auf zwei Kanälen
+eines Schaltmoduls (HBW-MB-Sw ab v1.06). Register von Rollladen n ab 10·n."""
 
 from __future__ import annotations
 
@@ -22,7 +23,6 @@ from .const import (
     BLIND_OPENING,
     HR_BLIND_CMD,
     HR_BLIND_POS,
-    KIND_SWITCH,
     SCAN_INTERVAL_MOVING,
 )
 from .coordinator import HbwCoordinator
@@ -35,8 +35,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: HbwConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data.coordinator
-    if coordinator.info.kind == KIND_SWITCH and coordinator.data.lock_mask:
-        async_add_entities([HbwBlind(coordinator)])
+    async_add_entities(HbwBlind(coordinator, n) for n in range(1, coordinator.blind_count + 1))
 
 
 class HbwBlind(HbwEntity, CoverEntity):
@@ -52,12 +51,14 @@ class HbwBlind(HbwEntity, CoverEntity):
         | CoverEntityFeature.SET_POSITION
     )
 
-    def __init__(self, coordinator: HbwCoordinator) -> None:
-        super().__init__(coordinator, "blind1", blind=True)
+    def __init__(self, coordinator: HbwCoordinator, blind: int) -> None:
+        super().__init__(coordinator, f"blind{blind}", blind=blind)
+        self.blind = blind
 
     @property
     def _blind(self) -> dict[str, int] | None:
-        return self.coordinator.data.blind
+        blinds = self.coordinator.data.blinds
+        return blinds[self.blind - 1] if len(blinds) >= self.blind else None
 
     @property
     def available(self) -> bool:
@@ -95,7 +96,7 @@ class HbwBlind(HbwEntity, CoverEntity):
     async def _send(self, register: int, value: int) -> None:
         c = self.coordinator
         try:
-            await c.client.write_register(c.unit, register, value)
+            await c.client.write_register(c.unit, 10 * self.blind + register, value)
         except ModbusError as err:
             raise HomeAssistantError(f"Rollladen: {err}") from err
         # Fahrt beginnt: sofort neu lesen und danach jede Sekunde

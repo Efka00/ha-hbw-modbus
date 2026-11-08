@@ -30,8 +30,7 @@ from .const import (
     DOMAIN,
     KIND_BUS,
     MANUFACTURER,
-    KIND_S0,
-    KIND_SWITCH,
+    KIND_BLIND,
     SERVICE_SET_METER_READING,
     SERVICE_TURN_ON_FOR,
 )
@@ -142,9 +141,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
     except ModbusError as err:
         await release_client(hass, client)
         raise ConfigEntryNotReady(str(err)) from err
-    if info.kind not in (KIND_SWITCH, KIND_S0):
-        await release_client(hass, client)
-        raise ConfigEntryNotReady("Rollladenmodule werden noch nicht unterstützt")
     coordinator = HbwCoordinator(hass, entry, client, unit, info)
     await coordinator.async_load_counts()
     try:
@@ -162,14 +158,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
 
     # Kanalgeräte entfernen, die es nicht mehr gibt (z. B. jetzt Rollladen-Kanäle)
     entry.async_on_unload(entry.add_update_listener(_options_updated))
+    # (Rollladenmodul: keine Kanalgeräte, nur die Rollläden)
     locked = coordinator.data.lock_mask
     expected = {(DOMAIN, entry.unique_id)} | {
-        channel_identifier(entry, ch)
-        for ch in range(1, info.channels + 1)
-        if not (locked >> (ch - 1)) & 1
+        blind_identifier(entry, n) for n in range(1, coordinator.blind_count + 1)
     }
-    if locked:
-        expected.add(blind_identifier(entry))
+    if info.kind != KIND_BLIND:
+        expected |= {
+            channel_identifier(entry, ch)
+            for ch in range(1, info.channels + 1)
+            if not (locked >> (ch - 1)) & 1
+        }
     for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
         if not device.identifiers & expected:
             dev_reg.async_remove_device(device.id)

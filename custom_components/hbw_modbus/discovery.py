@@ -45,7 +45,6 @@ from .const import (
     ID_RANGES,
     SCAN_IDS,
     IR_INFO,
-    KIND_BLIND,
     PROBE_TIMEOUT,
     SEARCH_TIMEOUT,
     SERVICE_ID,
@@ -64,8 +63,9 @@ STATUS_IDLE = "idle"          # seit dem Start von HA noch nicht gesucht
 STATUS_RUNNING = "running"
 STATUS_NOTHING = "nothing"    # nichts Neues gefunden
 STATUS_FOUND = "found"        # mindestens ein neues Modul (Rückfrage offen)
+STATUS_OTHER = "other"        # es hat sich etwas gemeldet, das HA nicht einrichten kann
 STATUS_ERROR = "error"
-STATUSES = [STATUS_IDLE, STATUS_RUNNING, STATUS_NOTHING, STATUS_FOUND, STATUS_ERROR]
+STATUSES = [STATUS_IDLE, STATUS_RUNNING, STATUS_NOTHING, STATUS_FOUND, STATUS_OTHER, STATUS_ERROR]
 
 
 def module_unique_id(host: str, port: int, unit: int) -> str:
@@ -200,9 +200,6 @@ class HbwBus:
                 continue
             self.seen.add(unit)
             label = kind_label(info)
-            if info.kind == KIND_BLIND:
-                lines.append(f"- ID {unit}: {label} – Rollladenmodule werden noch nicht unterstützt")
-                continue
             if unit in ignored:
                 lines.append(f"- ID {unit}: {label} – in HA ignoriert")
                 continue
@@ -229,7 +226,8 @@ class HbwBus:
             )
         message = "\n".join([head, *lines])
         self.last_search = dt_util.utcnow()
-        self._set(STATUS_FOUND if found_new else STATUS_NOTHING, result=message)
+        status = STATUS_FOUND if found_new else STATUS_OTHER if lines else STATUS_NOTHING
+        self._set(status, result=message)
         self._notify(message)
 
     def _start_flow(self, unit: int, info: ModuleInfo, stored: int | None) -> None:

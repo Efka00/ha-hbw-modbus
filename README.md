@@ -30,8 +30,11 @@ Ist ein Modul eingerichtet, bietet HA den **Bus** des Gateways als
 Von sich aus fragt der Bus nichts ab: Ein Modbus-Modul antwortet nur, wenn
 es gefragt wird, und der Bus soll schlank bleiben. Der Sensor **Suche** am
 Bus-Gerät zeigt, was gerade passiert: „Läuft“ (Attribut Fortschritt, z. B.
-12/29), danach „Nichts gefunden“ oder „Neues Modul gefunden“; das Ergebnis
-steht im Attribut „Ergebnis“ und zusätzlich in einer Benachrichtigung.
+12/29), danach „Nichts gefunden“, „Neues Modul gefunden“ oder „Gefunden,
+nicht einrichtbar“ (es hat sich etwas gemeldet, das HA nicht einrichten
+kann: ein in HA ignoriertes Modul, ein fremdes Modbus-Gerät oder eine
+unvollständige Antwort); das Ergebnis steht im Attribut „Ergebnis“ und
+zusätzlich in einer Benachrichtigung.
 
 Gefundene Module erscheinen unter Einstellungen → Geräte & Dienste als
 „Gefunden“ und werden erst nach **Rückfrage** eingerichtet:
@@ -87,8 +90,7 @@ die erste Fahrt in eine Endlage macht sie wieder bekannt. Während einer
 Fahrt fragt die Integration jede Sekunde ab. Positionen: 0 % = zu, 10 % = Lüftungsschlitze
 ganz offen (ab Firmware HBW-MB-Sw v1.09 / HBW-MB-Bl v1.06, vorher 1 %),
 50 % = Endleiste in der Fenstermitte, 100 % = auf. Dafür muss die „Zeit
-bis Endleiste hebt ab“ eingestellt sein. Rollladenmodule (HBW-MB-Bl)
-kann die Integration noch nicht.
+bis Endleiste hebt ab“ eingestellt sein.
 
 Am Rollladengerät stehen unter „Konfiguration“ die Einstellungen, die das
 Modul speichert:
@@ -114,6 +116,20 @@ target:
 data:
   seconds: 300
 ```
+
+## Rollladenmodul (HBW-MB-Bl)
+
+Je Modul vier Rollläden, jeder als eigenes Gerät:
+
+| Gerät | Geräte-Informationen | Entitäten |
+|---|---|---|
+| Modul, Name `HBWMB_A04` (A + Modbus-ID) | „HBW-MB-Bl (4 Rollläden) von HM485MB“, Firmware-Version | Diagnose wie beim Schaltmodul (Neustart-Grund usw. ab Firmware v1.05) |
+| je Rollladen, Name `HBWMB_A04 Rollladen n` | „HBWMB_A04 von HM485MB“, verbunden über das Modul | Rollladen (Auf, Ab, Stopp, Position) und die Einstellungen aus der Tabelle oben |
+
+Verhalten, Positionen und Einstellungen sind dieselben wie beim Rollladen
+auf dem Schaltmodul. Je Abfrage liest die Integration alle vier Rollläden
+mit einer Anfrage; die Einstellungen liest sie nur beim Start und nach
+einer Einlernfahrt, Änderungen aus HA übernimmt sie direkt.
 
 ## Zählermodul (HBW-MB-S0)
 
