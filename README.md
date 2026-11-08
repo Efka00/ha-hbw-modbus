@@ -25,7 +25,7 @@ Ist ein Modul eingerichtet, bietet HA den **Bus** des Gateways als
 | Knopf | Was passiert |
 |---|---|
 | Neues Modul suchen | eine Anfrage an die Service-ID 247 – dort meldet sich ein frisch geflashter Nano |
-| Bus durchsuchen | alle IDs 1–247 außer den schon eingerichteten, je höchstens 0,3 s (gut eine Minute) |
+| Bus durchsuchen | die IDs 1–19, 21–29 und 247 außer den schon eingerichteten, je höchstens 0,3 s (zusammen höchstens etwa 10 s) |
 
 Von sich aus fragt der Bus nichts ab: Ein Modbus-Modul antwortet nur, wenn
 es gefragt wird, und der Bus soll schlank bleiben. Das Ergebnis der Suche
@@ -37,9 +37,13 @@ Gefundene Module erscheinen unter Einstellungen → Geräte & Dienste als
 - Modul mit eigener ID (z. B. ein umgeflashtes HBW-Modul, das seine
   A-Nummer übernommen hat): bestätigen, fertig.
 - Modul unter ID 247: Die Rückfrage schlägt die nächste freie ID vor
-  (Schalt- und Rollladenmodule ab 1, Zähler ab 101). Vor dem Schreiben
+  (Schalt- und Rollladenmodule 1–19, Zähler 21–29). Vor dem Schreiben
   prüft die Integration, dass am Bus niemand unter der neuen ID antwortet;
   danach, dass das Modul unter ihr antwortet.
+
+**Vergabe der IDs:** 1–19 für Schalt- und Rollladenmodule (A-Nummer =
+ID, `HBWMB_A01` …), 21–29 für Zähler (`HBWMB_S01` = ID 21 …). Die ID 0 ist
+der Broadcast an alle Module.
 
 Neue Nanos nacheinander anschließen: Zwei Module unter ID 247 antworten
 gleichzeitig und stören sich.
@@ -53,7 +57,7 @@ Integration hinzufügen → „HBW Modbus“ → „Modul hinzufügen“:
 | Gateway | IP oder Name des Modbus-TCP-Gateways |
 | Port | meist 502 |
 | Modbus-ID | ID des Moduls (1–247) |
-| Name | optional, Name des Modulgeräts (leer = `HBWMB_A` + Modbus-ID, z. B. `HBWMB_A03`; Zählermodule ab ID 101 = `HBWMB_S01`) |
+| Name | optional, Name des Modulgeräts (leer = `HBWMB_A` + Modbus-ID, z. B. `HBWMB_A03`; Zählermodule ab ID 21 = `HBWMB_S01`) |
 
 Die Integration liest Firmware-Version, Kanalzahl und Modultyp aus dem
 Modul. Je Modul entsteht ein Eintrag, alle Module an einem Gateway teilen
@@ -110,7 +114,7 @@ data:
 
 | Gerät | Geräte-Informationen | Entitäten |
 |---|---|---|
-| Modul, Name `HBWMB_S01` (Modbus-ID 101 = S01) | „HBW-MB-S0 (8 Eingänge) von HM485MB“ | Diagnose wie beim Schaltmodul |
+| Modul, Name `HBWMB_S01` (Modbus-ID 21 = S01) | „HBW-MB-S0 (8 Eingänge) von HM485MB“ | Diagnose wie beim Schaltmodul |
 | je Eingang, Name `HBWMB_S01 Eingang n` | „HBWMB_S01 von HM485MB“ | „Zählerstand“ in kWh (für das Energie-Dashboard, Attribut `pulses` = Impulse), „Leistung“ in W |
 
 - **Impulse pro kWh:** Standard 1000, einstellbar unter „Konfigurieren“ am

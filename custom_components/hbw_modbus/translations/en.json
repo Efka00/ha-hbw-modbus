@@ -16,7 +16,7 @@
           "host": "Gateway (IP or host name)",
           "port": "Port",
           "device_address": "Modbus ID",
-          "name": "Name (empty = HBWMB_A + Modbus ID, counters from ID 101: HBWMB_S01 …)"
+          "name": "Name (empty = HBWMB_A + Modbus ID, counters from ID 21: HBWMB_S01 …)"
         }
       },
       "bus": {
@@ -40,7 +40,7 @@
       },
       "assign_id": {
         "title": "New module: assign ID",
-        "description": "{model}, firmware {firmware}, HBW address {hbw_address}, still answers at service ID 247. The new ID is written to the module and saved there. Suggested is the next free ID (switch/blind modules from 1, counters from 101).",
+        "description": "{model}, firmware {firmware}, HBW address {hbw_address}, still answers at service ID 247. The new ID is written to the module and saved there. Suggested is the next free ID (switch/blind modules 1–19, counters 21–29).",
         "data": {
           "device_address": "New Modbus ID",
           "name": "Name (empty = HBWMB_A + Modbus ID, counters: HBWMB_S01 …)"
@@ -53,7 +53,8 @@
       "id_configured": "This ID is already configured in HA for another module.",
       "id_in_use": "A device on the bus already answers at this ID.",
       "no_answer": "The module did not answer when writing the ID. Is it still connected?",
-      "assign_failed": "The ID was written, but the module does not answer at the new ID."
+      "assign_failed": "The ID was written, but the module does not answer at the new ID.",
+      "id_range": "Switch and blind modules use IDs 1–19, counters 21–29."
     },
     "abort": {
       "already_configured": "This module is already configured.",

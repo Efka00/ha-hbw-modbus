@@ -16,7 +16,7 @@
           "host": "Gateway (IP oder Name)",
           "port": "Port",
           "device_address": "Modbus-ID",
-          "name": "Name (leer = HBWMB_A + Modbus-ID, Zähler ab ID 101: HBWMB_S01 …)"
+          "name": "Name (leer = HBWMB_A + Modbus-ID, Zähler ab ID 21: HBWMB_S01 …)"
         }
       },
       "bus": {
@@ -40,7 +40,7 @@
       },
       "assign_id": {
         "title": "Neues Modul: ID vergeben",
-        "description": "{model}, Firmware {firmware}, HBW-Adresse {hbw_address}, meldet sich noch unter der Service-ID 247. Die neue ID wird ins Modul geschrieben und dort gespeichert. Vorgeschlagen ist die nächste freie ID (Schalt-/Rollladenmodule ab 1, Zähler ab 101).",
+        "description": "{model}, Firmware {firmware}, HBW-Adresse {hbw_address}, meldet sich noch unter der Service-ID 247. Die neue ID wird ins Modul geschrieben und dort gespeichert. Vorgeschlagen ist die nächste freie ID (Schalt-/Rollladenmodule 1–19, Zähler 21–29).",
         "data": {
           "device_address": "Neue Modbus-ID",
           "name": "Name (leer = HBWMB_A + Modbus-ID, Zähler: HBWMB_S01 …)"
@@ -53,7 +53,8 @@
       "id_configured": "Diese ID ist in HA schon für ein anderes Modul eingerichtet.",
       "id_in_use": "Unter dieser ID antwortet am Bus schon ein Gerät.",
       "no_answer": "Das Modul hat auf das Schreiben der ID nicht geantwortet. Hängt es noch am Bus?",
-      "assign_failed": "Die ID wurde geschrieben, das Modul antwortet aber nicht unter der neuen ID."
+      "assign_failed": "Die ID wurde geschrieben, das Modul antwortet aber nicht unter der neuen ID.",
+      "id_range": "Schalt- und Rollladenmodule bekommen die IDs 1–19, Zähler 21–29."
     },
     "abort": {
       "already_configured": "Dieses Modul ist schon eingerichtet.",

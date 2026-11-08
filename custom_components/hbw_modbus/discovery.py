@@ -7,8 +7,9 @@ zwei Knöpfe.
 * „Neues Modul suchen“: eine Anfrage an die Service-ID 247. Unter ihr meldet
   sich ein frisch geflashter Nano (oder ein Modul, dessen Taster beim
   Einschalten gedrückt war).
-* „Bus durchsuchen“: alle IDs 1–247, außer denen, die in HA schon
-  eingerichtet sind. Je freie ID höchstens 0,3 s, zusammen gut eine Minute.
+* „Bus durchsuchen“: die vergebenen IDs 1–19 (Schalt-/Rollladenmodule),
+  21–29 (Zähler) und 247, außer denen, die in HA schon eingerichtet sind.
+  Je freie ID höchstens 0,3 s, zusammen höchstens etwa 10 s.
 
 Gefundene Module erscheinen in HA als „Neues Gerät gefunden“ und werden erst
 nach Rückfrage eingerichtet. Einem Modul mit ID 247 wird dabei eine ID
@@ -39,6 +40,7 @@ from .const import (
     DOMAIN,
     HR_CONFIG,
     ID_RANGES,
+    SCAN_IDS,
     IR_INFO,
     KIND_BLIND,
     PROBE_TIMEOUT,
@@ -80,7 +82,8 @@ def known_units(hass: HomeAssistant, host: str, port: int, ignored: bool) -> set
 def suggest_id(hass: HomeAssistant, host: str, port: int, kind: str, stored_id: int | None) -> int:
     """Vorschlag für die neue ID eines Moduls mit ID 247: die im Modul
     gespeicherte ID (Service-Modus), sonst die nächste freie seiner Art."""
-    if stored_id is not None and 1 <= stored_id < SERVICE_ID:
+    ids = ID_RANGES[kind]
+    if stored_id is not None and stored_id in ids:
         return stored_id
     used = known_units(hass, host, port, False) | known_units(hass, host, port, True)
     for entry in hass.config_entries.async_entries(DOMAIN):
@@ -89,10 +92,7 @@ def suggest_id(hass: HomeAssistant, host: str, port: int, kind: str, stored_id: 
         bus = getattr(entry, "runtime_data", None)
         if isinstance(bus, HbwBus) and bus.host == host and bus.port == port:
             used |= bus.seen
-    for unit in ID_RANGES.get(kind, range(1, SERVICE_ID)):
-        if unit not in used:
-            return unit
-    return next((u for u in range(1, SERVICE_ID) if u not in used), 1)
+    return next((u for u in ids if u not in used), ids[0])
 
 
 def kind_label(info: ModuleInfo) -> str:
@@ -136,11 +136,8 @@ class HbwBus:
         configured = known_units(self.hass, self.host, self.port, False)
         ignored = known_units(self.hass, self.host, self.port, True)
         if full:
-            units = [u for u in range(1, SERVICE_ID + 1) if u not in configured]
-            self._notify(
-                f"Bus wird durchsucht ({len(units)} IDs, eingerichtete Module werden "
-                "übersprungen). Das dauert etwa eine Minute."
-            )
+            units = [u for u in SCAN_IDS if u not in configured]
+            self._notify(f"Bus wird durchsucht ({len(units)} IDs, eingerichtete Module werden übersprungen) …")
         else:
             units = [SERVICE_ID]
         lines: list[str] = []

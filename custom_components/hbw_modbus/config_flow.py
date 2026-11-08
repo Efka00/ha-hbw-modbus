@@ -29,6 +29,7 @@ from .const import (
     DEFAULT_PULSES_PER_KWH,
     DOMAIN,
     HR_CONFIG,
+    ID_RANGES,
     IR_INFO,
     KIND_BLIND,
     KIND_BUS,
@@ -52,9 +53,10 @@ from .entity import module_name
 CTX_NEW_MODULE = "hbw_new_module"
 
 
-def _id_selector() -> selector.NumberSelector:
+def _id_selector(kind: str) -> selector.NumberSelector:
+    ids = ID_RANGES[kind]
     return selector.NumberSelector(
-        selector.NumberSelectorConfig(min=1, max=SERVICE_ID - 1, mode=selector.NumberSelectorMode.BOX)
+        selector.NumberSelectorConfig(min=ids[0], max=ids[-1], mode=selector.NumberSelectorMode.BOX)
     )
 
 
@@ -228,7 +230,9 @@ class HbwModbusConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             new_id = int(user_input[CONF_DEVICE_ADDRESS])
-            if new_id in known_units(self.hass, host, port, False) and new_id != stored:
+            if new_id not in ID_RANGES[self._info.kind]:
+                errors[CONF_DEVICE_ADDRESS] = "id_range"
+            elif new_id in known_units(self.hass, host, port, False) and new_id != stored:
                 errors[CONF_DEVICE_ADDRESS] = "id_configured"
             else:
                 errors = await self._write_id(host, port, new_id)
@@ -243,7 +247,7 @@ class HbwModbusConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         schema = vol.Schema(
             {
-                vol.Required(CONF_DEVICE_ADDRESS, default=default_id): _id_selector(),
+                vol.Required(CONF_DEVICE_ADDRESS, default=default_id): _id_selector(self._info.kind),
                 vol.Optional(CONF_NAME, default=(user_input or {}).get(CONF_NAME, "")): str,
             }
         )

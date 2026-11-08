@@ -23,12 +23,15 @@ CONF_KIND = "kind"
 SERVICE_ID = 247
 PROBE_TIMEOUT = 0.3
 SEARCH_TIMEOUT = 1.0
-# Bereiche, aus denen eine neue ID vorgeschlagen wird (A = Ausgänge, S = Zähler)
+# Vergebene IDs (0 ist der Broadcast): A = Ausgänge (Schalt- und
+# Rollladenmodule) 1–19, S = Zähler 21–29 (21 = S01). Nur diese IDs und die
+# Service-ID werden bei „Bus durchsuchen“ abgefragt.
 ID_RANGES = {
-    KIND_SWITCH: range(1, 100),
-    KIND_BLIND: range(1, 100),
-    KIND_S0: range(101, 151),
+    KIND_SWITCH: range(1, 20),
+    KIND_BLIND: range(1, 20),
+    KIND_S0: range(21, 30),
 }
+SCAN_IDS = [*range(1, 20), *range(21, 30), SERVICE_ID]
 
 # IR7 = Modultyp (ab HBW-MB-S0; ältere Firmware kennt IR7 nicht)
 IR_MODULE_TYPE = 7

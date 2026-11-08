@@ -19,9 +19,9 @@ from .coordinator import HbwCoordinator, ModuleInfo
 
 def module_name(unit: int, kind: str) -> str:
     """Name wie die HBW-Nummern: A = Ausgänge (Schalt-/Rollladenmodul,
-    Modbus-ID = A-Nummer), S = Zähler (ab ID 101: 101 = S01)."""
+    Modbus-ID = A-Nummer, 1–19), S = Zähler (IDs 21–29: 21 = S01)."""
     if kind == KIND_S0:
-        return f"HBWMB_S{unit - 100 if unit > 100 else unit:02d}"
+        return f"HBWMB_S{unit - 20 if 21 <= unit <= 29 else unit:02d}"
     return f"HBWMB_A{unit:02d}"
 
 
