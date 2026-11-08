@@ -19,6 +19,8 @@ vergeben (Vorschlag: nächste freie ID für seine Art).
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from datetime import datetime
 import logging
 from typing import Any
 
@@ -32,6 +34,7 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import discovery_flow
+from homeassistant.util import dt as dt_util
 
 from .client import HbwModbusClient, ModbusError, ModbusExceptionResponse
 from .const import (
@@ -55,6 +58,14 @@ CONF_STORED_ID = "stored_id"
 CONF_FIRMWARE = "firmware"
 CONF_CHANNELS = "channels"
 CONF_HBW_ADDRESS = "hbw_address"
+
+# Zustände des Sensors „Suche“ am Bus-Gerät
+STATUS_IDLE = "idle"          # seit dem Start von HA noch nicht gesucht
+STATUS_RUNNING = "running"
+STATUS_NOTHING = "nothing"    # nichts Neues gefunden
+STATUS_FOUND = "found"        # mindestens ein neues Modul (Rückfrage offen)
+STATUS_ERROR = "error"
+STATUSES = [STATUS_IDLE, STATUS_RUNNING, STATUS_NOTHING, STATUS_FOUND, STATUS_ERROR]
 
 
 def module_unique_id(host: str, port: int, unit: int) -> str:
@@ -110,6 +121,23 @@ class HbwBus:
         self.port: int = entry.data[CONF_PORT]
         self.seen: set[int] = set()        # bei der letzten Suche gefundene IDs
         self._task: asyncio.Task | None = None
+        # Rückmeldung für den Sensor „Suche“
+        self.status = STATUS_IDLE
+        self.progress: str | None = None   # z. B. "12/29" während der Suche
+        self.result: str | None = None     # Ergebnis der letzten Suche
+        self.last_search: datetime | None = None
+        self._listeners: list[Callable[[], None]] = []
+
+    def add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
+        self._listeners.append(update)
+        return lambda: self._listeners.remove(update)
+
+    def _set(self, status: str, progress: str | None = None, result: str | None = None) -> None:
+        self.status, self.progress = status, progress
+        if result is not None:
+            self.result = result
+        for update in list(self._listeners):
+            update()
 
     @property
     def busy(self) -> bool:
@@ -129,8 +157,17 @@ class HbwBus:
             self._notify("Es läuft bereits eine Suche.")
             return
         self._task = self.entry.async_create_background_task(
-            self.hass, self._run(full), f"{DOMAIN} Suche {self.host}"
+            self.hass, self._run_safe(full), f"{DOMAIN} Suche {self.host}"
         )
+
+    async def _run_safe(self, full: bool) -> None:
+        try:
+            await self._run(full)
+        except Exception as err:  # noqa: BLE001 – Rückmeldung statt stiller Abbruch
+            _LOGGER.exception("Suche am Bus %s fehlgeschlagen", self.host)
+            self.last_search = dt_util.utcnow()
+            self._set(STATUS_ERROR, result=f"Suche fehlgeschlagen: {err}")
+            self._notify(f"Suche fehlgeschlagen: {err}")
 
     async def _run(self, full: bool) -> None:
         configured = known_units(self.hass, self.host, self.port, False)
@@ -142,7 +179,8 @@ class HbwBus:
             units = [SERVICE_ID]
         lines: list[str] = []
         found_new = 0
-        for unit in units:
+        for done, unit in enumerate(units):
+            self._set(STATUS_RUNNING, f"{done}/{len(units)}")
             try:
                 await self.client.read_registers(
                     unit, True, IR_INFO, 1, timeout=PROBE_TIMEOUT if full else SEARCH_TIMEOUT, probe=True
@@ -189,7 +227,10 @@ class HbwBus:
                 "Kein neues Modul gefunden: Unter ID 247 meldet sich niemand. "
                 "Ein neuer Nano muss am Bus hängen und Strom haben."
             )
-        self._notify("\n".join([head, *lines]))
+        message = "\n".join([head, *lines])
+        self.last_search = dt_util.utcnow()
+        self._set(STATUS_FOUND if found_new else STATUS_NOTHING, result=message)
+        self._notify(message)
 
     def _start_flow(self, unit: int, info: ModuleInfo, stored: int | None) -> None:
         data: dict[str, Any] = {

@@ -94,6 +94,27 @@
       },
       "power": {
         "name": "Leistung"
+      },
+      "search_status": {
+        "name": "Suche",
+        "state": {
+          "idle": "Noch nicht gesucht",
+          "running": "Läuft",
+          "nothing": "Nichts gefunden",
+          "found": "Neues Modul gefunden",
+          "error": "Fehler"
+        },
+        "state_attributes": {
+          "progress": {
+            "name": "Fortschritt"
+          },
+          "result": {
+            "name": "Ergebnis"
+          },
+          "last_search": {
+            "name": "Letzte Suche"
+          }
+        }
       }
     },
     "number": {

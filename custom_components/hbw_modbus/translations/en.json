@@ -94,6 +94,27 @@
       },
       "power": {
         "name": "Power"
+      },
+      "search_status": {
+        "name": "Search",
+        "state": {
+          "idle": "Not searched yet",
+          "running": "Running",
+          "nothing": "Nothing found",
+          "found": "New module found",
+          "error": "Error"
+        },
+        "state_attributes": {
+          "progress": {
+            "name": "Progress"
+          },
+          "result": {
+            "name": "Result"
+          },
+          "last_search": {
+            "name": "Last search"
+          }
+        }
       }
     },
     "number": {

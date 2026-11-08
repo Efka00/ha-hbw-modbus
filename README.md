@@ -28,8 +28,10 @@ Ist ein Modul eingerichtet, bietet HA den **Bus** des Gateways als
 | Bus durchsuchen | die IDs 1–19, 21–29 und 247 außer den schon eingerichteten, je höchstens 0,3 s (zusammen höchstens etwa 10 s) |
 
 Von sich aus fragt der Bus nichts ab: Ein Modbus-Modul antwortet nur, wenn
-es gefragt wird, und der Bus soll schlank bleiben. Das Ergebnis der Suche
-steht in einer Benachrichtigung.
+es gefragt wird, und der Bus soll schlank bleiben. Der Sensor **Suche** am
+Bus-Gerät zeigt, was gerade passiert: „Läuft“ (Attribut Fortschritt, z. B.
+12/29), danach „Nichts gefunden“ oder „Neues Modul gefunden“; das Ergebnis
+steht im Attribut „Ergebnis“ und zusätzlich in einer Benachrichtigung.
 
 Gefundene Module erscheinen unter Einstellungen → Geräte & Dienste als
 „Gefunden“ und werden erst nach **Rückfrage** eingerichtet:

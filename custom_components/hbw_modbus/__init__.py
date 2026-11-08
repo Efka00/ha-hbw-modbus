@@ -40,7 +40,7 @@ from .discovery import HbwBus, bus_unique_id
 from .entity import blind_identifier, channel_identifier, module_device_info
 
 PLATFORMS: list[Platform] = [Platform.COVER, Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
-BUS_PLATFORMS: list[Platform] = [Platform.BUTTON]
+BUS_PLATFORMS: list[Platform] = [Platform.BUTTON, Platform.SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 

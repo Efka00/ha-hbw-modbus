@@ -20,13 +20,16 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import HbwConfigEntry
+from . import HbwConfigEntry, is_bus
+from .discovery import STATUSES, HbwBus
 from .client import ModbusError
 from .const import (
     CONF_PULSES_PER_KWH,
     DEFAULT_PULSES_PER_KWH,
+    DOMAIN,
     KIND_S0,
     NO_PULSE,
     RESET_CAUSES,
@@ -113,6 +116,9 @@ DIAG_SENSORS: tuple[HbwSensorDescription, ...] = (
 async def async_setup_entry(
     hass: HomeAssistant, entry: HbwConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
+    if is_bus(entry):
+        async_add_entities([HbwSearchStatus(entry.runtime_data)])
+        return
     coordinator = entry.runtime_data.coordinator
     entities: list[SensorEntity] = [
         HbwSensor(coordinator, desc)
@@ -199,3 +205,34 @@ class HbwPowerSensor(HbwEntity, SensorEntity):
         if ms <= 0:
             return None
         return 3_600_000_000 / (self.ppk * ms)
+
+
+class HbwSearchStatus(SensorEntity):
+    """Rückmeldung der Suche am Bus-Gerät: läuft (mit Fortschritt), nichts
+    gefunden, neues Modul gefunden. Ergebnis und Zeitpunkt als Attribute."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "search_status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = STATUSES
+    _attr_should_poll = False
+
+    def __init__(self, bus: HbwBus) -> None:
+        self._bus = bus
+        self._attr_unique_id = f"{bus.entry.unique_id}_search_status"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, bus.entry.unique_id)})
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self._bus.add_listener(self.async_write_ha_state))
+
+    @property
+    def native_value(self) -> str:
+        return self._bus.status
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None]:
+        return {
+            "progress": self._bus.progress,
+            "result": self._bus.result,
+            "last_search": self._bus.last_search.isoformat() if self._bus.last_search else None,
+        }

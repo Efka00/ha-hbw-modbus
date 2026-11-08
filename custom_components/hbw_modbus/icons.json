@@ -7,6 +7,17 @@
       "scan_bus": {
         "default": "mdi:magnify-scan"
       }
+    },
+    "sensor": {
+      "search_status": {
+        "default": "mdi:radar",
+        "state": {
+          "running": "mdi:timer-sand",
+          "nothing": "mdi:check-circle-outline",
+          "found": "mdi:new-box",
+          "error": "mdi:alert-circle-outline"
+        }
+      }
     }
   }
 }
