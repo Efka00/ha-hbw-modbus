@@ -175,6 +175,13 @@ einer Einlernfahrt, Änderungen aus HA übernimmt sie direkt.
   ausgefallenes oder abgeklemmtes Modul die gemeinsame Verbindung nicht für
   die anderen Module (Schaltbefehle, Suche). Antwortet es wieder, gilt
   sofort wieder der 5-s-Takt.
+- Befehle haben Vorrang vor Abfragen: Schalten, Rollladen fahren und
+  Einstellungen schreiben laufen vor allen wartenden Abfragen. Wartet eine
+  Abfrage gerade noch auf ihre Antwort (z. B. von einem Modul, das nicht
+  antwortet), gibt sie die Verbindung sofort frei und wird nach dem Befehl
+  neu gestellt. Ein Befehl wartet damit höchstens, bis das Gateway die
+  laufende Anfrage am Bus abgeschlossen hat (bei einer freien ID etwa
+  0,2 s).
 - Nach einem Firmware-Update, einem Modultausch unter derselben ID oder
   wenn am Modul ein Rollladen ein- oder ausgerichtet wird, lädt sich der
   Eintrag selbst neu. Gerät und Entitäten passen dann zum neuen Stand.

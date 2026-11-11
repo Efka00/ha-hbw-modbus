@@ -4,6 +4,12 @@ Bewusst ohne pymodbus: Der Waveshare RS485 TO ETH im Modus "Modbus TCP to
 RTU" schickt die Antworten vom Bus an alle verbundenen TCP-Clients. Antworten
 mit fremder Transaktions-ID werden deshalb still verworfen. Alle Anfragen
 laufen nacheinander über eine Verbindung je Gateway.
+
+Befehle (Schreibzugriffe) haben Vorrang: Wartet eine Abfrage noch auf ihre
+Antwort – etwa von einem Modul, das nicht antwortet –, gibt sie die
+Verbindung sofort für den Befehl frei und wird danach neu gestellt. Eine
+verspätete Antwort auf die zurückgestellte Abfrage wird anhand der
+Transaktions-ID verworfen.
 """
 
 from __future__ import annotations
@@ -38,6 +44,10 @@ class ModbusExceptionResponse(ModbusError):
         self.code = code
 
 
+class _Preempted(Exception):
+    """Abfrage zugunsten eines Befehls zurückgestellt (wird neu gestellt)."""
+
+
 class HbwModbusClient:
     """Eine TCP-Verbindung zu einem Modbus-Gateway."""
 
@@ -50,6 +60,11 @@ class HbwModbusClient:
         self._writer: asyncio.StreamWriter | None = None
         self._tid = 0
         self._clean = True   # False, solange eine Antwort halb gelesen ist
+        # Vorrang für Befehle: Zahl wartender Befehle und zwei Signale
+        self._prio = 0
+        self._prio_wanted = asyncio.Event()   # ein Befehl wartet
+        self._prio_idle = asyncio.Event()     # kein Befehl wartet
+        self._prio_idle.set()
 
     async def close(self) -> None:
         """Verbindung schließen."""
@@ -66,27 +81,83 @@ class HbwModbusClient:
                 pass
 
     async def _request(
-        self, unit: int, pdu: bytes, retry: bool, timeout: float | None = None, probe: bool = False
+        self,
+        unit: int,
+        pdu: bytes,
+        retry: bool,
+        timeout: float | None = None,
+        probe: bool = False,
+        priority: bool = False,
     ) -> bytes:
         """probe: Suche nach Modulen. Bleibt die Antwort aus, ist die ID nur frei –
         die Verbindung bleibt dann offen (eine verspätete Antwort wird später als
-        fremde Antwort verworfen)."""
-        async with self._lock:
-            for attempt in range(2 if retry else 1):
+        fremde Antwort verworfen).
+        priority: Befehl. Läuft vor wartenden Abfragen und unterbricht eine
+        Abfrage, die gerade auf ihre Antwort wartet."""
+        if priority:
+            self._prio += 1
+            self._prio_idle.clear()
+            self._prio_wanted.set()
+            try:
+                async with self._lock:
+                    return await self._attempts(unit, pdu, retry, timeout, probe, False)
+            finally:
+                self._prio -= 1
+                if not self._prio:
+                    self._prio_wanted.clear()
+                    self._prio_idle.set()
+        while True:
+            await self._prio_idle.wait()
+            async with self._lock:
+                if self._prio:
+                    continue   # ein Befehl wartet: Vortritt lassen
                 try:
-                    return await self._transact(unit, pdu, timeout or self.timeout)
-                except asyncio.TimeoutError as err:
-                    if not (probe and self._clean and self._writer is not None):
-                        await self._close()
-                    last = err
-                except (OSError, asyncio.IncompleteReadError) as err:
-                    await self._close()
-                    last = err
-            raise ModbusConnectionError(
-                f"{self.host}:{self.port} ID {unit}: {type(last).__name__} {last}"
-            ) from last
+                    return await self._attempts(unit, pdu, retry, timeout, probe, True)
+                except _Preempted:
+                    _LOGGER.debug("ID %s: Abfrage für einen Befehl zurückgestellt", unit)
 
-    async def _transact(self, unit: int, pdu: bytes, timeout: float) -> bytes:
+    async def _attempts(
+        self, unit: int, pdu: bytes, retry: bool, timeout: float | None, probe: bool, preemptible: bool
+    ) -> bytes:
+        for attempt in range(2 if retry else 1):
+            try:
+                return await self._transact(unit, pdu, timeout or self.timeout, preemptible)
+            except asyncio.TimeoutError as err:
+                if not (probe and self._clean and self._writer is not None):
+                    await self._close()
+                last = err
+            except (OSError, asyncio.IncompleteReadError) as err:
+                await self._close()
+                last = err
+        raise ModbusConnectionError(
+            f"{self.host}:{self.port} ID {unit}: {type(last).__name__} {last}"
+        ) from last
+
+    async def _read_header(self, remaining: float, preemptible: bool) -> bytes:
+        """Kopf der Antwort lesen. preemptible: abbrechen, sobald ein Befehl wartet
+        (_Preempted). Der Abbruch ist sicher: readexactly entnimmt erst, wenn
+        alle 7 Byte da sind, ein halber Kopf bleibt im Puffer."""
+        assert self._reader is not None
+        if not preemptible:
+            return await asyncio.wait_for(self._reader.readexactly(7), remaining)
+        read = asyncio.ensure_future(self._reader.readexactly(7))
+        wanted = asyncio.ensure_future(self._prio_wanted.wait())
+        try:
+            done, _ = await asyncio.wait({read, wanted}, timeout=remaining, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            wanted.cancel()
+        if read in done:
+            return read.result()
+        read.cancel()
+        try:
+            await read
+        except asyncio.CancelledError:
+            pass
+        if wanted in done:
+            raise _Preempted
+        raise asyncio.TimeoutError
+
+    async def _transact(self, unit: int, pdu: bytes, timeout: float, preemptible: bool = False) -> bytes:
         loop = asyncio.get_running_loop()
         if self._writer is None:
             self._clean = True
@@ -101,7 +172,7 @@ class HbwModbusClient:
         deadline = loop.time() + timeout
         while True:
             remaining = max(deadline - loop.time(), 0.001)
-            header = await asyncio.wait_for(self._reader.readexactly(7), remaining)
+            header = await self._read_header(remaining, preemptible)
             self._clean = False
             rtid, proto, length, runit = struct.unpack(">HHHB", header)
             if proto != 0 or not 2 <= length <= 260:
@@ -144,18 +215,18 @@ class HbwModbusClient:
     async def write_coil(self, unit: int, address: int, on: bool) -> None:
         """Eine Coil schreiben (FC05). Kein automatischer Wiederholversuch."""
         await self._request(
-            unit, struct.pack(">BHH", FC_WRITE_COIL, address, 0xFF00 if on else 0), retry=False
+            unit, struct.pack(">BHH", FC_WRITE_COIL, address, 0xFF00 if on else 0), retry=False, priority=True
         )
 
     async def write_register(self, unit: int, address: int, value: int) -> None:
         """Ein Holding-Register schreiben (FC06). Kein automatischer Wiederholversuch,
         weil z. B. HR7 (Umschalten) bei doppelter Ausführung zurückschalten würde."""
         await self._request(
-            unit, struct.pack(">BHH", FC_WRITE_REGISTER, address, value & 0xFFFF), retry=False
+            unit, struct.pack(">BHH", FC_WRITE_REGISTER, address, value & 0xFFFF), retry=False, priority=True
         )
 
     async def write_registers(self, unit: int, address: int, values: list[int]) -> None:
         """Mehrere Holding-Register in einer Anfrage schreiben (FC16)."""
         n = len(values)
         pdu = struct.pack(f">BHHB{n}H", FC_WRITE_REGISTERS, address, n, 2 * n, *(v & 0xFFFF for v in values))
-        await self._request(unit, pdu, retry=False)
+        await self._request(unit, pdu, retry=False, priority=True)
