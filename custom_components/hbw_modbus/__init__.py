@@ -137,7 +137,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
     client = acquire_client(hass, entry.data[CONF_HOST], entry.data[CONF_PORT])
     unit = entry.data[CONF_DEVICE_ADDRESS]
     try:
-        info = await probe_module(client, unit)
+        info = await probe_module(client, unit, quick=True)
     except ModbusError as err:
         await release_client(hass, client)
         raise ConfigEntryNotReady(str(err)) from err

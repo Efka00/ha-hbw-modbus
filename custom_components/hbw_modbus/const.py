@@ -10,6 +10,11 @@ CONF_DEVICE_ADDRESS = "device_address"
 DEFAULT_PORT = 502
 DEFAULT_TIMEOUT = 3.0
 SCAN_INTERVAL = timedelta(seconds=5)
+# Antwortet ein Modul nicht, wird es nur noch selten und kurz abgefragt
+# (eine Anfrage, 1 s Wartezeit), damit es die gemeinsame Verbindung zum
+# Gateway nicht für die anderen Module blockiert.
+OFFLINE_INTERVAL = timedelta(seconds=60)
+OFFLINE_TIMEOUT = 1.0
 
 KIND_SWITCH = "sw"  # HBW-MB-Sw (Schaltmodul)
 KIND_BLIND = "bl"   # HBW-MB-Bl (Rollladenmodul)

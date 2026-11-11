@@ -170,7 +170,11 @@ einer Einlernfahrt, Änderungen aus HA übernimmt sie direkt.
 
 - Jedes Modul wird alle 5 s abgefragt (drei bis vier Anfragen).
 - Antwortet ein Modul nicht, sind seine Entitäten „nicht verfügbar“, bis es
-  wieder antwortet.
+  wieder antwortet. Bis dahin fragt die Integration es nur noch einmal pro
+  Minute ab, mit einer einzigen Anfrage und 1 s Wartezeit. So blockiert ein
+  ausgefallenes oder abgeklemmtes Modul die gemeinsame Verbindung nicht für
+  die anderen Module (Schaltbefehle, Suche). Antwortet es wieder, gilt
+  sofort wieder der 5-s-Takt.
 - Nach einem Firmware-Update, einem Modultausch unter derselben ID oder
   wenn am Modul ein Rollladen ein- oder ausgerichtet wird, lädt sich der
   Eintrag selbst neu. Gerät und Entitäten passen dann zum neuen Stand.

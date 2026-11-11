@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .client import HbwModbusClient, ModbusError, ModbusExceptionResponse
+from .client import HbwModbusClient, ModbusConnectionError, ModbusError, ModbusExceptionResponse
 from .const import (
     DOMAIN,
     FW_DIAG_BL,
@@ -31,6 +31,8 @@ from .const import (
     KIND_S0,
     KIND_SWITCH,
     MODULE_TYPE_S0,
+    OFFLINE_INTERVAL,
+    OFFLINE_TIMEOUT,
     SCAN_INTERVAL,
     SCAN_INTERVAL_MOVING,
     BLIND_CLOSING,
@@ -99,9 +101,13 @@ def _u32(regs: list[int], n: int) -> list[int]:
     return [(regs[2 * i] << 16) | regs[2 * i + 1] for i in range(n)]
 
 
-async def probe_module(client: HbwModbusClient, unit: int) -> ModuleInfo:
-    """Modul am Bus erkennen: Version, Kanäle, Art (Schalt-, Rollladen- oder Zählermodul)."""
-    ir = await client.read_registers(unit, True, IR_INFO, 4)
+async def probe_module(client: HbwModbusClient, unit: int, quick: bool = False) -> ModuleInfo:
+    """Modul am Bus erkennen: Version, Kanäle, Art (Schalt-, Rollladen- oder Zählermodul).
+    quick: erste Anfrage nur einmal und kurz (Start von HA, Modul evtl. nicht da)."""
+    if quick:
+        ir = await client.read_registers(unit, True, IR_INFO, 4, timeout=OFFLINE_TIMEOUT, probe=True)
+    else:
+        ir = await client.read_registers(unit, True, IR_INFO, 4)
     try:
         module_type = (await client.read_registers(unit, True, IR_MODULE_TYPE, 1))[0]
     except ModbusExceptionResponse as err:
@@ -161,6 +167,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         # Rollladen-Einstellungen ändern sich nur über HA oder eine Einlernfahrt:
         # einmal lesen, danach nur nach dem Ende einer Einlernfahrt (Bus schlank)
         self._blind_par: list[list[int]] | None = None
+        self._offline = False   # letzte Abfrage ohne Antwort -> selten und kurz fragen
 
     def _module_changed(self, why: str) -> None:
         """Modul hat sich geändert (Firmware, Kanäle, Rollladen): Eintrag neu laden,
@@ -278,9 +285,16 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
     async def _async_update_data(self) -> ModuleData:
         writes = self._writes
         try:
-            info = await self.client.read_registers(
-                self.unit, True, IR_INFO, IR_INFO_COUNT_BL if self.info.kind == KIND_BLIND else IR_INFO_COUNT
-            )
+            count = IR_INFO_COUNT_BL if self.info.kind == KIND_BLIND else IR_INFO_COUNT
+            if self._offline:
+                info = await self.client.read_registers(
+                    self.unit, True, IR_INFO, count, timeout=OFFLINE_TIMEOUT, probe=True
+                )
+            else:
+                info = await self.client.read_registers(self.unit, True, IR_INFO, count)
+            if self._offline:
+                _LOGGER.info("%s antwortet wieder", self.name)
+                self._offline = False
             if info[0] != self.info.firmware:
                 self._module_changed(f"Firmware {self.info.firmware_str} -> {info[0] >> 8}.{info[0] & 0xFF:02d}")
             elif info[1] != self.info.channels or ((info[2] << 16) | info[3]) != self.info.hbw_address:
@@ -311,6 +325,11 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
                     break
                 writes = self._writes
                 await self._read_outputs(data)
+        except ModbusConnectionError as err:
+            # keine Antwort: bis das Modul wieder antwortet, nur jede Minute fragen
+            self._offline = True
+            self.update_interval = OFFLINE_INTERVAL
+            raise UpdateFailed(str(err)) from err
         except ModbusError as err:
             raise UpdateFailed(str(err)) from err
         # während einer Rollladenfahrt jede Sekunde abfragen
