@@ -43,6 +43,7 @@ from .const import (
     IR_BLIND,
     IR_INFO_COUNT_BL,
     HR_BLIND_PAR,
+    HR_BLIND_CMD,
     BLIND_PAR_COUNT,
     BLIND_STRIDE,
     BLIND_VALUES,
@@ -177,6 +178,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         # einmal lesen, danach nur nach dem Ende einer Einlernfahrt (Bus schlank)
         self._blind_par: list[list[int]] | None = None
         self._offline = False   # letzte Abfrage ohne Antwort -> selten und kurz fragen
+        self.teach_done: set[int] = set()   # Rollläden (1..n), deren Einlernfahrt gerade fertig wurde
         self.health = module_health(hass, entry)
 
     def _module_changed(self, why: str) -> None:
@@ -220,6 +222,11 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
             for i in range(count)
         ]
         old = self.data.blinds if self.data is not None else []
+        for i, bl in enumerate(data.blinds):
+            if bl["teach"]:
+                self.teach_done.discard(i + 1)
+            elif i < len(old) and old[i]["teach"] == 5 and bl["known"]:
+                self.teach_done.add(i + 1)   # letzter Marker gesetzt, Zeiten gespeichert
         taught = any(i < len(old) and old[i]["teach"] and not b["teach"] for i, b in enumerate(data.blinds))
         if self._blind_par is None or len(self._blind_par) != count or taught:
             self._blind_par = [
@@ -227,6 +234,14 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
                 for n in range(1, count + 1)
             ]
         data.blind_par = [list(p) for p in self._blind_par]
+
+    async def async_blind_command(self, blind: int, command: int) -> None:
+        """Befehl an Rollladen n (HR10n): 0 zu, 1 auf, 2 Stopp, 10 Einlernen
+        starten, 11 Marker, 12 Einlernen abbrechen. Danach sofort neu lesen
+        und während der Fahrt jede Sekunde."""
+        await self.client.write_register(self.unit, 10 * blind + HR_BLIND_CMD, command)
+        self.update_interval = SCAN_INTERVAL_MOVING
+        await self.async_refresh()
 
     async def async_set_force(self, channel: int, on: bool) -> None:
         """Kanal (1..N) auf „Dauer ein“ setzen oder freigeben. Gesetzt geht

@@ -61,6 +61,11 @@ HR_OUTPUTS = 2
 HR_BLIND_ACT = 4
 HR_BLIND_DIR = 5
 HR_TOGGLE = 7
+# Art je Kanal des Schaltmoduls (Optionen: {"3": "light", ...}), Standard Schalter
+CONF_CHANNEL_TYPES = "channel_types"
+TYPE_SWITCH = "switch"
+TYPE_LIGHT = "light"
+CHANNEL_TYPES = [TYPE_SWITCH, TYPE_LIGHT]
 HR_FORCE = 8           # Dauer ein, Bit n = Kanal n+1 (ab HBW-MB-Sw v1.10)
 FW_FORCE_SW = 0x0110
 HR_TIMER = 20          # HR20..20+N-1: Timer in s

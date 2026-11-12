@@ -114,6 +114,18 @@
             "name": "Letzte Suche"
           }
         }
+      },
+      "teach": {
+        "name": "Einlernen",
+        "state": {
+          "off": "Aus",
+          "closing": "Fährt zu (warten)",
+          "wait_lift": "Marker: Endleiste hebt ab",
+          "wait_mid": "Marker: Endleiste in der Mitte",
+          "wait_top": "Marker: oben angekommen",
+          "wait_bottom": "Fährt zu – Marker: unten angekommen",
+          "done": "Fertig, Zeiten gespeichert"
+        }
       }
     },
     "number": {
@@ -145,6 +157,15 @@
       },
       "scan_bus": {
         "name": "Bus durchsuchen"
+      },
+      "teach_start": {
+        "name": "Einlernfahrt starten"
+      },
+      "teach_marker": {
+        "name": "Marker setzen"
+      },
+      "teach_abort": {
+        "name": "Einlernfahrt abbrechen"
       }
     },
     "switch": {
@@ -155,6 +176,15 @@
     "binary_sensor": {
       "connection": {
         "name": "Verbindung"
+      }
+    },
+    "select": {
+      "channel_type": {
+        "name": "Typ",
+        "state": {
+          "switch": "Schalter",
+          "light": "Licht"
+        }
       }
     }
   },

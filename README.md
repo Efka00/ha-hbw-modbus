@@ -104,6 +104,15 @@ Modul speichert:
 | Endlagenzuschlag | 0–100 % | Nachlauf an den Endlagen, Standard 10 % |
 | Referenzfahrt nach Zwischenfahrten | 0–1000 | nach so vielen Fahrten ohne Endlage erst in eine Endlage, 0 = aus |
 
+### Typ je Kanal: Schalter oder Licht
+
+Am Kanalgerät steht unter „Konfiguration“ die Auswahl **Typ**:
+„Schalter“ (Standard) legt `switch.…` an, „Licht“ ein einfaches Licht
+(ein/aus) `light.…`. Name, Gerät und Funktionen (Timer-Dienst, Dauer ein)
+bleiben gleich, nur die Art der Entität wechselt; der Eintrag lädt sich
+dafür kurz neu. Die Entitäts-ID ergibt sich aus dem Gerätenamen, z. B.
+Gerät „EG_WZ1_LED1“ → `light.eg_wz1_led1`.
+
 ### Dauer ein (ab Firmware HBW-MB-Sw v1.10)
 
 Für Leuchten, hinter denen eine Zigbee-Lampe sitzt und die deshalb immer
@@ -131,6 +140,24 @@ target:
 data:
   seconds: 300
 ```
+
+### Einlernfahrt (Rollladen)
+
+Am Rollladengerät stehen unter „Konfiguration“ die Knöpfe **Einlernfahrt
+starten**, **Marker setzen** und **Einlernfahrt abbrechen**. Der Sensor
+**Einlernen** zeigt jederzeit, was gerade passiert und welcher Marker als
+Nächstes kommt:
+
+1. „Einlernfahrt starten“: Der Rollladen fährt ganz zu (Sensor: „Fährt zu
+   (warten)“) und danach auf.
+2. „Marker setzen“, wenn die Endleiste abhebt, wenn sie in der Fenstermitte
+   steht und wenn der Rollladen oben ankommt.
+3. Er fährt wieder zu: „Marker setzen“, wenn er unten ankommt.
+4. Sensor „Fertig, Zeiten gespeichert“ – Fahrzeiten, „Zeit bis Endleiste
+   hebt ab“ und „Mitte“ stehen jetzt in den Einstellungen.
+
+Jeder andere Befehl bricht die Einlernfahrt ab, ebenso 5 Minuten ohne
+Marker.
 
 ## Rollladenmodul (HBW-MB-Bl)
 

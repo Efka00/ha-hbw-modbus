@@ -114,6 +114,18 @@
             "name": "Last search"
           }
         }
+      },
+      "teach": {
+        "name": "Teach-in",
+        "state": {
+          "off": "Off",
+          "closing": "Closing (wait)",
+          "wait_lift": "Marker: bottom bar lifts",
+          "wait_mid": "Marker: bottom bar in the middle",
+          "wait_top": "Marker: fully open (motor stops)",
+          "wait_bottom": "Closing – marker: fully closed",
+          "done": "Done, times saved"
+        }
       }
     },
     "number": {
@@ -145,6 +157,15 @@
       },
       "scan_bus": {
         "name": "Scan bus"
+      },
+      "teach_start": {
+        "name": "Start teach-in run"
+      },
+      "teach_marker": {
+        "name": "Set marker"
+      },
+      "teach_abort": {
+        "name": "Abort teach-in run"
       }
     },
     "switch": {
@@ -155,6 +176,15 @@
     "binary_sensor": {
       "connection": {
         "name": "Connection"
+      }
+    },
+    "select": {
+      "channel_type": {
+        "name": "Type",
+        "state": {
+          "switch": "Switch",
+          "light": "Light"
+        }
       }
     }
   },

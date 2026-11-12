@@ -127,6 +127,7 @@ async def async_setup_entry(
         for desc in DIAG_SENSORS
         if coordinator.info.has_diag or not desc.needs_diag
     ]
+    entities += [HbwTeachSensor(coordinator, n) for n in range(1, coordinator.blind_count + 1)]
     if coordinator.info.kind == KIND_S0:
         ppk = int(entry.options.get(CONF_PULSES_PER_KWH, DEFAULT_PULSES_PER_KWH))
         min_power = int(entry.options.get(CONF_MIN_POWER, DEFAULT_MIN_POWER))
@@ -242,3 +243,31 @@ class HbwSearchStatus(SensorEntity):
             "result": self._bus.result,
             "last_search": self._bus.last_search.isoformat() if self._bus.last_search else None,
         }
+
+
+# Einlernschritt der Firmware (IR22..) -> Zustand des Sensors „Einlernen“
+TEACH_STEPS = ["off", "closing", "wait_lift", "wait_mid", "wait_top", "wait_bottom"]
+TEACH_STATES = [*TEACH_STEPS, "done"]
+
+
+class HbwTeachSensor(HbwEntity, SensorEntity):
+    """Einlernfahrt eines Rollladens: was gerade passiert und welcher Marker
+    als Nächstes kommt. „Fertig“, bis eine neue Einlernfahrt beginnt."""
+
+    _attr_translation_key = "teach"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = TEACH_STATES
+
+    def __init__(self, coordinator: HbwCoordinator, blind: int) -> None:
+        super().__init__(coordinator, f"blind{blind}_teach", blind=blind)
+        self.blind = blind
+
+    @property
+    def native_value(self) -> str | None:
+        blinds = self.coordinator.data.blinds
+        if len(blinds) < self.blind:
+            return None
+        step = blinds[self.blind - 1]["teach"]
+        if step == 0 and self.blind in self.coordinator.teach_done:
+            return "done"
+        return TEACH_STEPS[step] if step < len(TEACH_STEPS) else None

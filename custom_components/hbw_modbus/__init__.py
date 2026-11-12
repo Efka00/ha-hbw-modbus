@@ -8,11 +8,13 @@ import voluptuous as vol
 
 from homeassistant.config_entries import SOURCE_INTEGRATION_DISCOVERY, ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import (
     config_validation as cv,
     device_registry as dr,
+    entity_registry as er,
     discovery_flow,
     service,
 )
@@ -31,9 +33,11 @@ from .const import (
     KIND_BUS,
     MANUFACTURER,
     KIND_BLIND,
+    TYPE_SWITCH,
     SERVICE_SET_METER_READING,
     SERVICE_TURN_ON_FOR,
 )
+from .channel import channel_type, free_channels
 from .coordinator import HbwCoordinator, probe_module
 from .health import forget_health, module_health
 from .discovery import HbwBus, bus_unique_id
@@ -41,8 +45,11 @@ from .entity import blind_identifier, channel_identifier, module_device_info
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.COVER,
+    Platform.LIGHT,
     Platform.NUMBER,
+    Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
 ]
@@ -52,14 +59,15 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Dienst einmal für alle Module registrieren."""
-    service.async_register_platform_entity_service(
-        hass,
-        DOMAIN,
-        SERVICE_TURN_ON_FOR,
-        entity_domain=Platform.SWITCH,
-        schema={vol.Required(ATTR_SECONDS): vol.All(cv.positive_int, vol.Range(min=1, max=65535))},
-        func="async_turn_on_for",
-    )
+    for domain in (Platform.SWITCH, Platform.LIGHT):
+        service.async_register_platform_entity_service(
+            hass,
+            DOMAIN,
+            SERVICE_TURN_ON_FOR,
+            entity_domain=domain,
+            schema={vol.Required(ATTR_SECONDS): vol.All(cv.positive_int, vol.Range(min=1, max=65535))},
+            func="async_turn_on_for",
+        )
     service.async_register_platform_entity_service(
         hass,
         DOMAIN,
@@ -180,13 +188,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
     for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
         if not device.identifiers & expected:
             dev_reg.async_remove_device(device.id)
+    # Typ eines Kanals geändert: Entität der anderen Art (switch./light.) entfernen
+    ent_reg = er.async_get(hass)
+    for ch in free_channels(coordinator):
+        other = Platform.LIGHT if channel_type(entry, ch) == TYPE_SWITCH else Platform.SWITCH
+        if eid := ent_reg.async_get_entity_id(other, DOMAIN, f"{entry.unique_id}_channel_{ch}"):
+            ent_reg.async_remove(eid)
     _offer_bus(hass, entry.data[CONF_HOST], entry.data[CONF_PORT])
     return True
 
 
 async def _options_updated(hass: HomeAssistant, entry: HbwConfigEntry) -> None:
-    """Optionen geändert (Impulse pro kWh): neu laden."""
-    await hass.config_entries.async_reload(entry.entry_id)
+    """Optionen geändert (Impulse pro kWh, Typ eines Kanals): neu laden.
+    Kurz verzögert, damit mehrere Änderungen hintereinander nur ein
+    Neuladen auslösen."""
+    pending = hass.data.setdefault(f"{DOMAIN}_reload", {})
+    if (cancel := pending.pop(entry.entry_id, None)) is not None:
+        cancel()
+
+    @callback
+    def _reload(_now) -> None:
+        pending.pop(entry.entry_id, None)
+        hass.config_entries.async_schedule_reload(entry.entry_id)
+
+    pending[entry.entry_id] = async_call_later(hass, 2, _reload)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:

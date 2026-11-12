@@ -6,6 +6,15 @@
       },
       "scan_bus": {
         "default": "mdi:magnify-scan"
+      },
+      "teach_start": {
+        "default": "mdi:school-outline"
+      },
+      "teach_marker": {
+        "default": "mdi:map-marker-check-outline"
+      },
+      "teach_abort": {
+        "default": "mdi:cancel"
       }
     },
     "sensor": {
@@ -18,6 +27,13 @@
           "other": "mdi:help-circle-outline",
           "error": "mdi:alert-circle-outline"
         }
+      },
+      "teach": {
+        "default": "mdi:school-outline",
+        "state": {
+          "done": "mdi:check-circle-outline",
+          "off": "mdi:school-outline"
+        }
       }
     },
     "switch": {
@@ -25,6 +41,14 @@
         "default": "mdi:lock-outline",
         "state": {
           "on": "mdi:lock"
+        }
+      }
+    },
+    "select": {
+      "channel_type": {
+        "default": "mdi:toggle-switch-outline",
+        "state": {
+          "light": "mdi:lightbulb-outline"
         }
       }
     }

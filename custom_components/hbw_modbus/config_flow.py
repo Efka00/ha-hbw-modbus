@@ -288,6 +288,7 @@ class HbwOptionsFlow(OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(
                 data={
+                    **self.config_entry.options,   # andere Optionen (Typ je Kanal) behalten
                     CONF_PULSES_PER_KWH: int(user_input[CONF_PULSES_PER_KWH]),
                     CONF_MIN_POWER: int(user_input[CONF_MIN_POWER]),
                 }

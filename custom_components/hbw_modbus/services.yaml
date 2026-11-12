@@ -2,7 +2,9 @@ turn_on_for:
   target:
     entity:
       integration: hbw_modbus
-      domain: switch
+      domain:
+        - switch
+        - light
   fields:
     seconds:
       required: true
