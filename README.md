@@ -205,6 +205,33 @@ einer Einlernfahrt, Änderungen aus HA übernimmt sie direkt.
   am selben Gateway (z. B. die Modbus-YAML von Home Assistant) melden dann
   aber Fehler. Am besten greift nur diese Integration auf das Gateway zu.
 
+## Ausfälle und Störungen
+
+- Am Modulgerät zeigt der Diagnosesensor **Verbindung** (verbunden /
+  getrennt), ob das Modul antwortet. Er bleibt auch bei einem Ausfall
+  sichtbar und hat die Attribute `last_seen` und `offline_since`.
+- Antwortet ein Modul länger als **2 Minuten** nicht – auch wenn es schon
+  beim Start von Home Assistant fehlt –, erscheint unter Einstellungen →
+  Reparaturen „HBWMB_A11 antwortet nicht“. Die Meldung verschwindet, sobald
+  es wieder antwortet.
+- Steigt der CRC-Fehlerzähler eines Moduls innerhalb einer Stunde um mehr
+  als **10**, erscheint „Busstörungen bei …“. Sie verschwindet nach einer
+  ruhigen Stunde.
+- Zu jeder Meldung und Entwarnung feuert das Ereignis `hbw_modbus_alarm`
+  mit `module`, `kind` (`offline`, `online`, `crc`, `crc_ok`) und
+  `message`. Eine Automation kann daraus eine Push-Nachricht machen:
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: hbw_modbus_alarm
+actions:
+  - action: notify.mobile_app_mein_handy
+    data:
+      title: HBW-Bus
+      message: "{{ trigger.event.data.message }}"
+```
+
 ## Tests
 
 ```bash

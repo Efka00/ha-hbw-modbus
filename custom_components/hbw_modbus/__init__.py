@@ -35,10 +35,17 @@ from .const import (
     SERVICE_TURN_ON_FOR,
 )
 from .coordinator import HbwCoordinator, probe_module
+from .health import forget_health, module_health
 from .discovery import HbwBus, bus_unique_id
 from .entity import blind_identifier, channel_identifier, module_device_info
 
-PLATFORMS: list[Platform] = [Platform.COVER, Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.COVER,
+    Platform.NUMBER,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
 BUS_PLATFORMS: list[Platform] = [Platform.BUTTON, Platform.SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -140,6 +147,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
         info = await probe_module(client, unit, quick=True)
     except ModbusError as err:
         await release_client(hass, client)
+        module_health(hass, entry).failure()   # fehlt das Modul schon beim Start
         raise ConfigEntryNotReady(str(err)) from err
     coordinator = HbwCoordinator(hass, entry, client, unit, info)
     await coordinator.async_load_counts()
@@ -194,4 +202,5 @@ async def async_remove_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> None
     """Eintrag gelöscht: gemerkte Zählerstände (Zählermodul) ebenfalls löschen."""
     if is_bus(entry):
         return
+    forget_health(hass, entry)
     await Store(hass, 1, f"{DOMAIN}.{entry.entry_id}").async_remove()

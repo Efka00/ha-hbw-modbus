@@ -11,6 +11,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .client import HbwModbusClient, ModbusConnectionError, ModbusError, ModbusExceptionResponse
+from .health import module_health
 from .const import (
     DOMAIN,
     FW_DIAG_BL,
@@ -176,6 +177,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         # einmal lesen, danach nur nach dem Ende einer Einlernfahrt (Bus schlank)
         self._blind_par: list[list[int]] | None = None
         self._offline = False   # letzte Abfrage ohne Antwort -> selten und kurz fragen
+        self.health = module_health(hass, entry)
 
     def _module_changed(self, why: str) -> None:
         """Modul hat sich geändert (Firmware, Kanäle, Rollladen): Eintrag neu laden,
@@ -351,9 +353,11 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
             # keine Antwort: bis das Modul wieder antwortet, nur jede Minute fragen
             self._offline = True
             self.update_interval = OFFLINE_INTERVAL
+            self.health.failure()
             raise UpdateFailed(str(err)) from err
         except ModbusError as err:
             raise UpdateFailed(str(err)) from err
+        self.health.success(data.info[5])
         # während einer Rollladenfahrt jede Sekunde abfragen
         self.update_interval = SCAN_INTERVAL_MOVING if data.blind_moving else SCAN_INTERVAL
         return data

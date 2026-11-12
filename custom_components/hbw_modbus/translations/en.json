@@ -151,6 +151,11 @@
       "always_on": {
         "name": "Always on"
       }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Connection"
+      }
     }
   },
   "services": {
@@ -185,6 +190,16 @@
           "min_power": "Minimum power (0 = off)"
         }
       }
+    }
+  },
+  "issues": {
+    "module_offline": {
+      "title": "{module} does not respond",
+      "description": "The module {module} has not answered on the bus since {since}. Check power, bus wiring and the gateway. This message disappears as soon as the module answers again."
+    },
+    "bus_errors": {
+      "title": "Bus errors at {module}",
+      "description": "{module} received {count} corrupted telegrams (CRC errors) within the last hour. Check termination, wiring and interference. This message disappears after a quiet hour."
     }
   }
 }

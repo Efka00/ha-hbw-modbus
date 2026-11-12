@@ -151,6 +151,11 @@
       "always_on": {
         "name": "Dauer ein"
       }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Verbindung"
+      }
     }
   },
   "services": {
@@ -185,6 +190,16 @@
           "min_power": "Mindestleistung (0 = aus)"
         }
       }
+    }
+  },
+  "issues": {
+    "module_offline": {
+      "title": "{module} antwortet nicht",
+      "description": "Das Modul {module} antwortet seit {since} nicht mehr am Bus. Bitte Stromversorgung, Busleitung und Gateway prüfen. Die Meldung verschwindet von selbst, sobald das Modul wieder antwortet."
+    },
+    "bus_errors": {
+      "title": "Busstörungen bei {module}",
+      "description": "{module} hat in der letzten Stunde {count} gestörte Telegramme empfangen (CRC-Fehler). Bitte Abschlusswiderstände, Verdrahtung und Störquellen prüfen. Die Meldung verschwindet nach einer ruhigen Stunde von selbst."
     }
   }
 }
