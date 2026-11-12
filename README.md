@@ -104,6 +104,21 @@ Modul speichert:
 | Endlagenzuschlag | 0–100 % | Nachlauf an den Endlagen, Standard 10 % |
 | Referenzfahrt nach Zwischenfahrten | 0–1000 | nach so vielen Fahrten ohne Endlage erst in eine Endlage, 0 = aus |
 
+### Dauer ein (ab Firmware HBW-MB-Sw v1.10)
+
+Für Leuchten, hinter denen eine Zigbee-Lampe sitzt und die deshalb immer
+Strom brauchen: Am Kanalgerät steht unter „Konfiguration“ der Schalter
+**Dauer ein**.
+
+- Eingeschaltet geht der Kanal sofort an. Das Modul hält ihn selbst an,
+  auch nach einem Stromausfall und unabhängig von Home Assistant.
+- Ausschalten, Umschalten und Timer auf diesem Kanal lehnt die Integration
+  mit einer Meldung ab, das Modul ignoriert sie ebenfalls. Auch „alle
+  Lichter im Raum aus“ schaltet ihn nicht ab.
+- Wieder ausgeschaltet bleibt der Kanal zunächst an und lässt sich dann
+  normal schalten.
+- Das Attribut `always_on` am Kanalschalter zeigt die Sperre an.
+
 ### Einschalten mit Timer
 
 Wie `on-for-timer` in FHEM: Das Modul schaltet den Kanal nach der Zeit

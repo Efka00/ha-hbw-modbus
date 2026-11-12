@@ -15,6 +15,8 @@ from .const import (
     DOMAIN,
     FW_DIAG_BL,
     FW_DIAG_SW,
+    FW_FORCE_SW,
+    HR_FORCE,
     HR_BLIND_ACT,
     HR_CONFIG,
     HR_OUTPUTS,
@@ -68,6 +70,11 @@ class ModuleInfo:
         return self.firmware >= (FW_DIAG_SW if self.kind == KIND_SWITCH else FW_DIAG_BL)
 
     @property
+    def has_force(self) -> bool:
+        """Schaltmodul mit „Dauer ein“ je Kanal (HR8)."""
+        return self.kind == KIND_SWITCH and self.firmware >= FW_FORCE_SW
+
+    @property
     def model(self) -> str:
         if self.kind == KIND_SWITCH:
             return f"HBW-MB-Sw ({self.channels} Kanäle)"
@@ -82,6 +89,7 @@ class ModuleData:
 
     outputs: int = 0
     lock_mask: int = 0               # Kanäle eines Rollladens (nicht schaltbar)
+    force_mask: int = 0              # Kanäle auf „Dauer ein“ (HR8)
     timers: list[int] = field(default_factory=list)
     info: list[int] = field(default_factory=list)   # IR0..6
     diag: list[int] | None = None                   # IR30..35
@@ -218,6 +226,17 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
             ]
         data.blind_par = [list(p) for p in self._blind_par]
 
+    async def async_set_force(self, channel: int, on: bool) -> None:
+        """Kanal (1..N) auf „Dauer ein“ setzen oder freigeben. Gesetzt geht
+        der Kanal sofort an; freigegeben bleibt er an, bis er ausgeschaltet wird."""
+        assert self.data is not None
+        bit = 1 << (channel - 1)
+        mask = (self.data.force_mask | bit) if on else (self.data.force_mask & ~bit)
+        await self.client.write_register(self.unit, HR_FORCE, mask)
+        outputs = self.data.outputs | bit if on else self.data.outputs
+        self._writes += 1
+        self.async_set_updated_data(replace(self.data, force_mask=mask, outputs=outputs))
+
     async def async_load_counts(self) -> None:
         stored = await self._store.async_load()
         if stored and isinstance(stored.get("counts"), list):
@@ -277,8 +296,11 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         self.async_set_updated_data(replace(self.data, outputs=outputs, timers=timers))
 
     async def _read_outputs(self, data: ModuleData) -> None:
-        config = await self.client.read_registers(self.unit, False, HR_CONFIG, 8)
+        config = await self.client.read_registers(
+            self.unit, False, HR_CONFIG, 9 if self.info.has_force else 8
+        )
         data.outputs = config[HR_OUTPUTS]
+        data.force_mask = config[HR_FORCE] if self.info.has_force else 0
         data.lock_mask = lock_mask(config, self.info.channels)
         data.timers = await self.client.read_registers(self.unit, False, HR_TIMER, self.info.channels)
 

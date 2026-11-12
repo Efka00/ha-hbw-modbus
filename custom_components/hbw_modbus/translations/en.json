@@ -146,6 +146,11 @@
       "scan_bus": {
         "name": "Scan bus"
       }
+    },
+    "switch": {
+      "always_on": {
+        "name": "Always on"
+      }
     }
   },
   "services": {

@@ -146,6 +146,11 @@
       "scan_bus": {
         "name": "Bus durchsuchen"
       }
+    },
+    "switch": {
+      "always_on": {
+        "name": "Dauer ein"
+      }
     }
   },
   "services": {

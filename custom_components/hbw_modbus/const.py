@@ -61,6 +61,8 @@ HR_OUTPUTS = 2
 HR_BLIND_ACT = 4
 HR_BLIND_DIR = 5
 HR_TOGGLE = 7
+HR_FORCE = 8           # Dauer ein, Bit n = Kanal n+1 (ab HBW-MB-Sw v1.10)
+FW_FORCE_SW = 0x0110
 HR_TIMER = 20          # HR20..20+N-1: Timer in s
 IR_INFO = 0            # IR0..6: Version, Kanäle, HBW-Adresse, Laufzeit, CRC, Speicherzähler
 IR_INFO_COUNT = 7

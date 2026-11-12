@@ -19,6 +19,14 @@
           "error": "mdi:alert-circle-outline"
         }
       }
+    },
+    "switch": {
+      "always_on": {
+        "default": "mdi:lock-outline",
+        "state": {
+          "on": "mdi:lock"
+        }
+      }
     }
   }
 }
