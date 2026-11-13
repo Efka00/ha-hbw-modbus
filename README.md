@@ -219,11 +219,20 @@ einer Einlernfahrt, Änderungen aus HA übernimmt sie direkt.
   sofort wieder der 5-s-Takt.
 - Befehle haben Vorrang vor Abfragen: Schalten, Rollladen fahren und
   Einstellungen schreiben laufen vor allen wartenden Abfragen. Wartet eine
-  Abfrage gerade noch auf ihre Antwort (z. B. von einem Modul, das nicht
-  antwortet), gibt sie die Verbindung sofort frei und wird nach dem Befehl
-  neu gestellt. Ein Befehl wartet damit höchstens, bis das Gateway die
-  laufende Anfrage am Bus abgeschlossen hat (bei einer freien ID etwa
-  0,2 s).
+  Abfrage schon länger als 0,2 s auf ihre Antwort (z. B. von einem Modul,
+  das nicht antwortet), gibt sie die Verbindung frei und wird nach dem
+  Befehl neu gestellt. Eine normale Antwort (rund 30 ms) läuft vorher
+  ungestört durch, damit der Befehl nicht in eine laufende Antwort am Bus
+  fällt.
+- Befehle warten 0,5 s auf die Quittung des Moduls. Bleibt sie aus, etwa
+  weil das Telegramm am Bus gestört wurde, wird der Befehl einmal
+  wiederholt (1 s Wartezeit) und im Log als Warnung „zweiter Versuch“
+  vermerkt. Erst wenn auch das scheitert, meldet HA einen Fehler – nach
+  höchstens rund 1,5 s. Wiederholt werden nur Befehle, die doppelt
+  ausgeführt dasselbe Ergebnis haben: Ein/Aus, Timer, „Dauer ein“,
+  Rollladen auf/zu/Stopp/Position, Parameter und Zählerstände. Nicht
+  wiederholt werden Umschalten, Einlernen starten, Einlern-Marker und das
+  Ändern der Modul-ID.
 - Nach einem Firmware-Update, einem Modultausch unter derselben ID oder
   wenn am Modul ein Rollladen ein- oder ausgerichtet wird, lädt sich der
   Eintrag selbst neu. Gerät und Entitäten passen dann zum neuen Stand.

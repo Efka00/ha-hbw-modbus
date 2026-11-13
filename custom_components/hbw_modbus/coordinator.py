@@ -199,7 +199,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
 
     async def async_set_blind_par(self, blind: int, index: int, value: int) -> None:
         """Parameter (0 = HR10n+2 … 6 = HR10n+8) von Rollladen n schreiben, sofort anzeigen."""
-        await self.client.write_register(self.unit, 10 * blind + HR_BLIND_PAR + index, value)
+        await self.client.write_register(self.unit, 10 * blind + HR_BLIND_PAR + index, value, retry=True)
         if self._blind_par is not None and len(self._blind_par) >= blind:
             self._blind_par[blind - 1][index] = value
         if self.data is not None and len(self.data.blind_par) >= blind:
@@ -239,7 +239,11 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         """Befehl an Rollladen n (HR10n): 0 zu, 1 auf, 2 Stopp, 10 Einlernen
         starten, 11 Marker, 12 Einlernen abbrechen. Danach sofort neu lesen
         und während der Fahrt jede Sekunde."""
-        await self.client.write_register(self.unit, 10 * blind + HR_BLIND_CMD, command)
+        # Einlernen starten (10) und Marker (11) nicht wiederholen: ein doppelter
+        # Marker würde den nächsten Einlernschritt auslösen.
+        await self.client.write_register(
+            self.unit, 10 * blind + HR_BLIND_CMD, command, retry=command not in (10, 11)
+        )
         self.update_interval = SCAN_INTERVAL_MOVING
         await self.async_refresh()
 
@@ -249,7 +253,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         assert self.data is not None
         bit = 1 << (channel - 1)
         mask = (self.data.force_mask | bit) if on else (self.data.force_mask & ~bit)
-        await self.client.write_register(self.unit, HR_FORCE, mask)
+        await self.client.write_register(self.unit, HR_FORCE, mask, retry=True)
         outputs = self.data.outputs | bit if on else self.data.outputs
         self._writes += 1
         self.async_set_updated_data(replace(self.data, force_mask=mask, outputs=outputs))
@@ -266,7 +270,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
     async def async_set_count(self, channel: int, value: int) -> None:
         """Zählerstand eines Eingangs (1..N) setzen, auch nach unten."""
         await self.client.write_registers(
-            self.unit, HR_COUNTS + 2 * (channel - 1), [value >> 16, value & 0xFFFF]
+            self.unit, HR_COUNTS + 2 * (channel - 1), [value >> 16, value & 0xFFFF], retry=True
         )
         self._set_known(channel - 1, value)
         if self.data is not None and len(self.data.counts) >= channel:
@@ -290,7 +294,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
                     self.name, i + 1, value, known,
                 )
                 await self.client.write_registers(
-                    self.unit, HR_COUNTS + 2 * i, [known >> 16, known & 0xFFFF]
+                    self.unit, HR_COUNTS + 2 * i, [known >> 16, known & 0xFFFF], retry=True
                 )
                 data.counts[i] = known
             elif value > known:

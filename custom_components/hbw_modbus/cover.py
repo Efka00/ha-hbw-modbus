@@ -96,7 +96,7 @@ class HbwBlind(HbwEntity, CoverEntity):
     async def _send(self, register: int, value: int) -> None:
         c = self.coordinator
         try:
-            await c.client.write_register(c.unit, 10 * self.blind + register, value)
+            await c.client.write_register(c.unit, 10 * self.blind + register, value, retry=True)
         except ModbusError as err:
             raise HomeAssistantError(f"Rollladen: {err}") from err
         # Fahrt beginnt: sofort neu lesen und danach jede Sekunde

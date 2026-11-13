@@ -100,4 +100,6 @@ class HbwChannel(HbwEntity):
         """Einschalten, das Modul schaltet nach `seconds` Sekunden selbst wieder aus."""
         self._check_forced()
         c = self.coordinator
-        await self._write(c.client.write_register(c.unit, HR_TIMER + self.channel - 1, seconds), True, seconds)
+        await self._write(
+            c.client.write_register(c.unit, HR_TIMER + self.channel - 1, seconds, retry=True), True, seconds
+        )
