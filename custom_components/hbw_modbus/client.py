@@ -163,9 +163,17 @@ class HbwModbusClient:
                 if not ((probe or command) and self._clean and self._writer is not None):
                     await self._close()
                 last = err
-            except (OSError, asyncio.IncompleteReadError) as err:
+            except (OSError, asyncio.IncompleteReadError, RuntimeError) as err:
+                # RuntimeError: Verbindung in unklarem Zustand – neu aufbauen
                 await self._close()
                 last = err
+            except asyncio.CancelledError:
+                # Abfrage von außen abgebrochen: war eine Antwort halb gelesen,
+                # passt der Datenstrom nicht mehr – Verbindung verwerfen
+                if not self._clean and self._writer is not None:
+                    self._writer.close()
+                    self._reader = self._writer = None
+                raise
         raise ModbusConnectionError(
             f"{self.host}:{self.port} ID {unit}: {type(last).__name__} {last}"
         ) from last
@@ -179,27 +187,35 @@ class HbwModbusClient:
         if not preemptible:
             return await asyncio.wait_for(self._reader.readexactly(7), remaining)
         read = asyncio.ensure_future(self._reader.readexactly(7))
-        grace = min(PREEMPT_GRACE, remaining)
-        done, _ = await asyncio.wait({read}, timeout=grace)
-        if read in done:
-            return read.result()
-        remaining -= grace
-        wanted = asyncio.ensure_future(self._prio_wanted.wait())
+        wanted: asyncio.Future | None = None
         try:
+            grace = min(PREEMPT_GRACE, remaining)
+            done, _ = await asyncio.wait({read}, timeout=grace)
+            if read in done:
+                return read.result()
+            remaining -= grace
             if remaining > 0:
+                wanted = asyncio.ensure_future(self._prio_wanted.wait())
                 done, _ = await asyncio.wait(
                     {read, wanted}, timeout=remaining, return_when=asyncio.FIRST_COMPLETED
                 )
+                if read in done:
+                    return read.result()
+            preempted = wanted is not None and wanted in done
         finally:
-            wanted.cancel()
-        if read in done:
-            return read.result()
-        read.cancel()
+            # Auch wenn die Abfrage selbst abgebrochen wird (z. B. beim Neuladen
+            # eines Moduls): den Lesevorgang nie hängen lassen, sonst scheitert
+            # die nächste Anfrage auf der gemeinsamen Verbindung mit
+            # „readexactly() called while another coroutine is already waiting“.
+            if wanted is not None:
+                wanted.cancel()
+            if not read.done():
+                read.cancel()
         try:
             await read
         except asyncio.CancelledError:
             pass
-        if wanted in done:
+        if preempted:
             raise _Preempted
         raise asyncio.TimeoutError
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 
 import voluptuous as vol
 
@@ -42,6 +43,8 @@ from .coordinator import HbwCoordinator, probe_module
 from .health import forget_health, module_health
 from .discovery import HbwBus, bus_unique_id
 from .entity import blind_identifier, channel_identifier, module_device_info
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -153,9 +156,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
     unit = entry.data[CONF_DEVICE_ADDRESS]
     try:
         info = await probe_module(client, unit, quick=True)
-    except ModbusError as err:
+    except Exception as err:   # noqa: BLE001 – jeder Fehler hier: später erneut versuchen
         await release_client(hass, client)
         module_health(hass, entry).failure()   # fehlt das Modul schon beim Start
+        if not isinstance(err, ModbusError):
+            _LOGGER.warning("ID %s: unerwarteter Fehler beim Erkennen (%r), neuer Versuch folgt", unit, err)
         raise ConfigEntryNotReady(str(err)) from err
     coordinator = HbwCoordinator(hass, entry, client, unit, info)
     await coordinator.async_load_counts()
