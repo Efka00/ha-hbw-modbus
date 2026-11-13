@@ -12,6 +12,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import (
+    PERCENTAGE,
     EntityCategory,
     UnitOfElectricPotential,
     UnitOfEnergy,
@@ -44,6 +45,7 @@ from .entity import HbwEntity
 class HbwSensorDescription(SensorEntityDescription):
     value_fn: Callable[[ModuleData], int | float | str | None]
     needs_diag: bool = False
+    needs_bus: bool = False
 
 
 def _uptime(d: ModuleData) -> int:
@@ -101,6 +103,32 @@ DIAG_SENSORS: tuple[HbwSensorDescription, ...] = (
         value_fn=lambda d: d.diag[2] if d.diag else None,
     ),
     HbwSensorDescription(
+        key="bus_error_rate",
+        translation_key="bus_error_rate",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        needs_bus=True,
+        value_fn=lambda d: d.bus_error_rate,
+    ),
+    HbwSensorDescription(
+        key="lost_requests",
+        translation_key="lost_requests",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        needs_bus=True,
+        value_fn=lambda d: d.lost_requests,
+    ),
+    HbwSensorDescription(
+        key="lost_responses",
+        translation_key="lost_responses",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        needs_bus=True,
+        value_fn=lambda d: d.lost_responses,
+    ),
+    HbwSensorDescription(
         key="supply_voltage",
         translation_key="supply_voltage",
         device_class=SensorDeviceClass.VOLTAGE,
@@ -125,7 +153,8 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         HbwSensor(coordinator, desc)
         for desc in DIAG_SENSORS
-        if coordinator.info.has_diag or not desc.needs_diag
+        if (coordinator.info.has_diag or not desc.needs_diag)
+        and (coordinator.info.has_bus_stats or not desc.needs_bus)
     ]
     entities += [HbwTeachSensor(coordinator, n) for n in range(1, coordinator.blind_count + 1)]
     if coordinator.info.kind == KIND_S0:

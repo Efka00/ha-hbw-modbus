@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field, replace
 import logging
+import time
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -14,6 +16,10 @@ from .client import HbwModbusClient, ModbusConnectionError, ModbusError, ModbusE
 from .health import module_health
 from .const import (
     DOMAIN,
+    BUS_RATE_WINDOW,
+    FW_BUS_BL,
+    FW_BUS_S0,
+    FW_BUS_SW,
     FW_DIAG_BL,
     FW_DIAG_SW,
     FW_FORCE_SW,
@@ -24,6 +30,7 @@ from .const import (
     HR_TIMER,
     IR_DIAG,
     IR_DIAG_COUNT,
+    IR_DIAG_COUNT_BUS,
     IR_INFO,
     IR_INFO_COUNT,
     HR_COUNTS,
@@ -52,6 +59,11 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def firmware_str(fw: int) -> str:
+    """Version wie in der Firmware: 0x0110 = 1.10 (Stellen hexadezimal)."""
+    return f"{fw >> 8:x}.{fw & 0xFF:02x}"
+
+
 @dataclass
 class ModuleInfo:
     """Was ein Modul über sich meldet (IR0..3)."""
@@ -63,13 +75,19 @@ class ModuleInfo:
 
     @property
     def firmware_str(self) -> str:
-        return f"{self.firmware >> 8}.{self.firmware & 0xFF:02d}"
+        return firmware_str(self.firmware)
 
     @property
     def has_diag(self) -> bool:
         if self.kind == KIND_S0:
             return True
         return self.firmware >= (FW_DIAG_SW if self.kind == KIND_SWITCH else FW_DIAG_BL)
+
+    @property
+    def has_bus_stats(self) -> bool:
+        """Busstatistik in IR36..38."""
+        need = {KIND_SWITCH: FW_BUS_SW, KIND_BLIND: FW_BUS_BL, KIND_S0: FW_BUS_S0}[self.kind]
+        return self.firmware >= need
 
     @property
     def has_force(self) -> bool:
@@ -94,7 +112,10 @@ class ModuleData:
     force_mask: int = 0              # Kanäle auf „Dauer ein“ (HR8)
     timers: list[int] = field(default_factory=list)
     info: list[int] = field(default_factory=list)   # IR0..6
-    diag: list[int] | None = None                   # IR30..35
+    diag: list[int] | None = None                   # IR30..35 (ab Busstatistik IR30..38)
+    bus_error_rate: float | None = None   # % gestörte Rahmen in der letzten Stunde
+    lost_requests: int = 0    # seit dem Start von HA: Anfragen, die das Modul nie erreicht haben
+    lost_responses: int = 0   # seit dem Start von HA: Antworten, die HA nie erreicht haben
     counts: list[int] = field(default_factory=list)     # Zählerstände (Impulse)
     intervals: list[int] = field(default_factory=list)  # ms zwischen den letzten Impulsen
     since: list[int] = field(default_factory=list)      # ms seit dem letzten Impuls
@@ -180,6 +201,12 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         self._offline = False   # letzte Abfrage ohne Antwort -> selten und kurz fragen
         self.teach_done: set[int] = set()   # Rollläden (1..n), deren Einlernfahrt gerade fertig wurde
         self.health = module_health(hass, entry)
+        # Busstatistik: Stand der letzten Abfrage, Zuwächse der letzten Stunde
+        self._bus_prev: tuple[int, ...] | None = None
+        self._bus_window: deque[tuple[float, int, int]] = deque()
+        self._bus_rate: float | None = None
+        self.lost_requests = 0
+        self.lost_responses = 0
 
     def _module_changed(self, why: str) -> None:
         """Modul hat sich geändert (Firmware, Kanäle, Rollladen): Eintrag neu laden,
@@ -305,6 +332,37 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         if changed:
             self._save_counts()
 
+    def _bus_update(self, crc: int, diag: list[int], sent: int, timeouts: int) -> None:
+        """Busstatistik fortschreiben. Zwischen zwei Abfragen hat HA `sent` Anfragen
+        an das Modul geschickt (einschließlich der aktuellen), das Modul hat IR37
+        um so viele verstandene Anfragen erhöht. Was fehlt, ging auf dem Hinweg
+        verloren; ausgebliebene Antworten darüber hinaus auf dem Rückweg."""
+        up = (diag[4] << 16) | diag[5]
+        frames, own, broken = diag[6], diag[7], diag[8]
+        prev, self._bus_prev = self._bus_prev, (up, crc, frames, own, broken, sent, timeouts)
+        if prev is None or up < prev[0]:
+            return   # erster Wert, nach einem Ausfall oder Neustart des Moduls: nur merken
+        d_crc = (crc - prev[1]) & 0xFFFF
+        d_frames = (frames - prev[2]) & 0xFFFF
+        d_own = (own - prev[3]) & 0xFFFF
+        d_broken = (broken - prev[4]) & 0xFFFF
+        lost_req = max(0, (sent - prev[5]) - d_own)
+        lost_resp = max(0, (timeouts - prev[6]) - lost_req)
+        if lost_req or lost_resp:
+            _LOGGER.info(
+                "%s: %d Anfrage(n) auf dem Hinweg, %d Antwort(en) auf dem Rückweg verloren",
+                self.name, lost_req, lost_resp,
+            )
+        self.lost_requests += lost_req
+        self.lost_responses += lost_resp
+        now = time.monotonic()
+        self._bus_window.append((now, d_crc + d_broken, d_frames))
+        while self._bus_window and now - self._bus_window[0][0] > BUS_RATE_WINDOW:
+            self._bus_window.popleft()
+        bad = sum(w[1] for w in self._bus_window)
+        total = bad + sum(w[2] for w in self._bus_window)
+        self._bus_rate = round(100 * bad / total, 3) if total else None
+
     def note_write(self, outputs: int, channel: int, timer: int) -> None:
         """Nach einem quittierten Schaltbefehl den neuen Zustand sofort übernehmen,
         statt auf die nächste Abfrage zu warten."""
@@ -339,7 +397,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
                 _LOGGER.info("%s antwortet wieder", self.name)
                 self._offline = False
             if info[0] != self.info.firmware:
-                self._module_changed(f"Firmware {self.info.firmware_str} -> {info[0] >> 8}.{info[0] & 0xFF:02d}")
+                self._module_changed(f"Firmware {self.info.firmware_str} -> {firmware_str(info[0])}")
             elif info[1] != self.info.channels or ((info[2] << 16) | info[3]) != self.info.hbw_address:
                 self._module_changed("anderes Modul unter dieser ID")
             data = ModuleData(info=info)
@@ -360,7 +418,12 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
                     self._module_changed("Rollladen-Kanäle geändert")
             if self.info.kind == KIND_BLIND:
                 await self._read_blinds(data, self.info.channels)
-            if self.info.has_diag:
+            if self.info.has_bus_stats:
+                data.diag = await self.client.read_registers(self.unit, True, IR_DIAG, IR_DIAG_COUNT_BUS)
+                # gleich danach, ohne await dazwischen: passt genau zum gelesenen IR37
+                self._bus_update(data.info[5], data.diag, self.client.sent.get(self.unit, 0),
+                                 self.client.timeouts.get(self.unit, 0))
+            elif self.info.has_diag:
                 data.diag = await self.client.read_registers(self.unit, True, IR_DIAG, IR_DIAG_COUNT)
             # Während der Abfrage geschaltet: Ausgänge könnten veraltet sein, neu lesen
             for _ in range(3):
@@ -371,12 +434,16 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         except ModbusConnectionError as err:
             # keine Antwort: bis das Modul wieder antwortet, nur jede Minute fragen
             self._offline = True
+            self._bus_prev = None   # Ausfall gehört nicht in die Busstatistik
             self.update_interval = OFFLINE_INTERVAL
             self.health.failure()
             raise UpdateFailed(str(err)) from err
         except ModbusError as err:
             raise UpdateFailed(str(err)) from err
         self.health.success(data.info[5])
+        data.bus_error_rate = self._bus_rate
+        data.lost_requests = self.lost_requests
+        data.lost_responses = self.lost_responses
         # während einer Rollladenfahrt jede Sekunde abfragen
         self.update_interval = SCAN_INTERVAL_MOVING if data.blind_moving else SCAN_INTERVAL
         return data

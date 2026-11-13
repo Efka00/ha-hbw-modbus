@@ -91,6 +91,12 @@ SCAN_INTERVAL_MOVING = timedelta(seconds=1)
 
 FW_DIAG_SW = 0x0108
 FW_DIAG_BL = 0x0105
+# Busstatistik IR36..38 (gültige Rahmen, Anfragen an das Modul, gestörte Rahmen)
+FW_BUS_SW = 0x0111
+FW_BUS_BL = 0x0107
+FW_BUS_S0 = 0x0103
+IR_DIAG_COUNT_BUS = 9   # IR30..38
+BUS_RATE_WINDOW = 3600  # s: Fehlerquote über die letzte Stunde
 
 RESET_CAUSES = ["unknown", "power_on", "external", "brownout", "watchdog"]
 

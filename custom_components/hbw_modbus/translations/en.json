@@ -68,6 +68,15 @@
       "crc_errors": {
         "name": "CRC errors"
       },
+      "bus_error_rate": {
+        "name": "Bus error rate"
+      },
+      "lost_requests": {
+        "name": "Lost requests"
+      },
+      "lost_responses": {
+        "name": "Lost responses"
+      },
       "reset_cause": {
         "name": "Restart reason",
         "state": {

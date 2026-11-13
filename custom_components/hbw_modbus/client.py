@@ -79,6 +79,10 @@ class HbwModbusClient:
         self._prio_wanted = asyncio.Event()   # ein Befehl wartet
         self._prio_idle = asyncio.Event()     # kein Befehl wartet
         self._prio_idle.set()
+        # Je Modul-ID: gesendete Anfragen und ausgebliebene Antworten. Der
+        # Koordinator vergleicht sie mit dem Anfragezähler des Moduls (IR37).
+        self.sent: dict[int, int] = {}
+        self.timeouts: dict[int, int] = {}
 
     async def close(self) -> None:
         """Verbindung schließen."""
@@ -155,6 +159,7 @@ class HbwModbusClient:
             try:
                 return await self._transact(unit, pdu, timeout, preemptible)
             except asyncio.TimeoutError as err:
+                self.timeouts[unit] = self.timeouts.get(unit, 0) + 1
                 if not ((probe or command) and self._clean and self._writer is not None):
                     await self._close()
                 last = err
@@ -209,6 +214,7 @@ class HbwModbusClient:
         self._tid = (self._tid % 0xFFFF) + 1
         tid = self._tid
         self._writer.write(struct.pack(">HHHB", tid, 0, len(pdu) + 1, unit) + pdu)
+        self.sent[unit] = self.sent.get(unit, 0) + 1
         await self._writer.drain()
         deadline = loop.time() + timeout
         while True:

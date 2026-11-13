@@ -74,7 +74,7 @@ Aufgebaut wie die bisherigen HM485-Geräte:
 
 | Gerät | Geräte-Informationen | Entitäten |
 |---|---|---|
-| Modul, Name `HBWMB_A03` (A + Modbus-ID) | „HBW-MB-Sw (12 Kanäle) von HM485MB“, Firmware-Version | Diagnose: Laufzeit, CRC-Fehler; ab Firmware v1.08 zusätzlich Neustart-Grund, Watchdog-Neustarts, Starts, Betriebsspannung |
+| Modul, Name `HBWMB_A03` (A + Modbus-ID) | „HBW-MB-Sw (12 Kanäle) von HM485MB“, Firmware-Version | Diagnose: Laufzeit, CRC-Fehler; ab Firmware v1.08 zusätzlich Neustart-Grund, Watchdog-Neustarts, Starts, Betriebsspannung; ab v1.11 Busfehlerquote, verlorene Anfragen/Antworten |
 | je Kanal, Name `HBWMB_A03 Kanal n` | „HBWMB_A03 von HM485MB“, verbunden über das Modul | Schalter. `switch.toggle` schaltet im Modul selbst um. Attribut `timer_remaining`: Restzeit des Ausschalt-Timers in s |
 
 Die Kanalgeräte lassen sich wie gewohnt umbenennen, z. B. in
@@ -253,6 +253,22 @@ einer Einlernfahrt, Änderungen aus HA übernimmt sie direkt.
 - Steigt der CRC-Fehlerzähler eines Moduls innerhalb einer Stunde um mehr
   als **10**, erscheint „Busstörungen bei …“. Sie verschwindet nach einer
   ruhigen Stunde.
+- Ab Firmware HBW-MB-Sw v1.11 (Bl v1.07, S0 v1.03) zählt das Modul die
+  Rahmen am Bus mit (IR36..38). Dazu kommen drei Diagnosesensoren:
+  - **Busfehlerquote**: Anteil gestörter Rahmen (CRC-Fehler, zu kurz/zu
+    lang) an allen Rahmen, die das Modul in der letzten Stunde gesehen hat.
+    Bei einem gesunden Bus nahe 0 %.
+  - **Verlorene Anfragen**: Anfragen und Befehle von HA, die das Modul nie
+    verstanden hat (Hinweg: Gateway, Leitung, Störung). HA vergleicht dazu
+    seine gesendeten Anfragen mit dem Anfragezähler des Moduls.
+  - **Verlorene Antworten**: Das Modul hat die Anfrage verstanden, die
+    Antwort kam aber nicht bei HA an (Rückweg).
+
+  Beide Verlustzähler beginnen beim Start von HA bei 0. Zeiten, in denen
+  das Modul offline war oder neu gestartet ist, zählen nicht mit. Jeder
+  Verlust steht außerdem als Info-Meldung im Log. Ein verlorener Befehl
+  wird seit v0.11.1 automatisch wiederholt; die Zähler zeigen, wie oft das
+  nötig war und auf welchem Weg es hakt.
 - Zu jeder Meldung und Entwarnung feuert das Ereignis `hbw_modbus_alarm`
   mit `module`, `kind` (`offline`, `online`, `crc`, `crc_ok`) und
   `message`. Eine Automation kann daraus eine Push-Nachricht machen:
