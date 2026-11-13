@@ -17,13 +17,13 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import HbwConfigEntry
 from .client import ModbusError
+from .blindcalc import POS_MAX
 from .const import (
     BLIND_CLOSED,
     BLIND_CLOSING,
     BLIND_OPENING,
     HR_BLIND_CMD,
     HR_BLIND_POS,
-    SCAN_INTERVAL_MOVING,
 )
 from .coordinator import HbwCoordinator
 from .entity import HbwEntity
@@ -40,7 +40,9 @@ async def async_setup_entry(
 
 class HbwBlind(HbwEntity, CoverEntity):
     """Rollladen mit Position. Die Fahrlogik (Kennlinie, Schutzpausen,
-    Referenzfahrt) läuft im Modul, HA schickt nur Befehle."""
+    Referenzfahrt) läuft im Modul, HA schickt nur Befehle. Während einer Fahrt
+    rechnet HA die Position mit derselben Kennlinie selbst fort (blindcalc)
+    und fragt das Modul erst bei der berechneten Ankunft wieder ab."""
 
     _attr_name = None
     _attr_device_class = CoverDeviceClass.SHUTTER
@@ -67,7 +69,10 @@ class HbwBlind(HbwEntity, CoverEntity):
     @property
     def current_cover_position(self) -> int | None:
         b = self._blind
-        return b["position"] if b and b["known"] else None
+        if not b or not b["known"]:
+            return None
+        live = self.coordinator.blind_live_position(self.blind)
+        return b["position"] if live is None else live
 
     @property
     def is_closed(self) -> bool | None:
@@ -75,7 +80,7 @@ class HbwBlind(HbwEntity, CoverEntity):
         if not b:
             return None
         if b["known"]:
-            return b["position"] == 0
+            return self.current_cover_position == 0
         return b["status"] == BLIND_CLOSED
 
     @property
@@ -93,24 +98,26 @@ class HbwBlind(HbwEntity, CoverEntity):
             return {}
         return {"position_known": bool(b["known"]), "teach_step": b["teach"], "moves": b["moves"]}
 
-    async def _send(self, register: int, value: int) -> None:
+    async def _send(self, register: int, value: int, target: int | None) -> None:
+        """Befehl senden. target: Ziel 0..10000 (None = Stopp). Danach sofort
+        neu lesen: die Rückmeldung verankert die gerechnete Fahrt."""
         c = self.coordinator
         try:
             await c.client.write_register(c.unit, 10 * self.blind + register, value, retry=True)
         except ModbusError as err:
             raise HomeAssistantError(f"Rollladen: {err}") from err
-        # Fahrt beginnt: sofort neu lesen und danach jede Sekunde
-        c.update_interval = SCAN_INTERVAL_MOVING
+        c.note_blind_command(self.blind, target)
         await c.async_refresh()
 
     async def async_open_cover(self, **kwargs: Any) -> None:
-        await self._send(HR_BLIND_CMD, CMD_OPEN)
+        await self._send(HR_BLIND_CMD, CMD_OPEN, POS_MAX)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
-        await self._send(HR_BLIND_CMD, CMD_CLOSE)
+        await self._send(HR_BLIND_CMD, CMD_CLOSE, 0)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        await self._send(HR_BLIND_CMD, CMD_STOP)
+        await self._send(HR_BLIND_CMD, CMD_STOP, None)
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
-        await self._send(HR_BLIND_POS, int(kwargs[ATTR_POSITION]))
+        pos = int(kwargs[ATTR_POSITION])
+        await self._send(HR_BLIND_POS, pos, pos * 100)

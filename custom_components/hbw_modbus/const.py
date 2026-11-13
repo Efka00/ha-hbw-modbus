@@ -87,7 +87,13 @@ IR_BLIND = 10
 BLIND_STRIDE = 4
 BLIND_VALUES = 5
 BLIND_CLOSED, BLIND_OPEN, BLIND_OPENING, BLIND_CLOSING = 0, 1, 2, 3
-SCAN_INTERVAL_MOVING = timedelta(seconds=1)
+SCAN_INTERVAL_MOVING = timedelta(seconds=1)   # nur noch während einer Einlernfahrt
+# Rollladenfahrt: HA rechnet die Position selbst (blindcalc) und fragt das
+# Modul erst bei der berechneten Ankunft wieder ab.
+BLIND_ARRIVAL_MARGIN = 0.5   # s nach der berechneten Ankunft nachfragen
+BLIND_MIN_CHECK = 1.0        # s frühestens bis zur nächsten Nachfrage
+BLIND_START_WAIT = 3.0       # s nach einem Fahrbefehl auf den Anlauf warten (Relaispausen)
+BLIND_TICK = 1.0             # s: Anzeige während der Fahrt fortschreiben (ohne Bus)
 
 FW_DIAG_SW = 0x0108
 FW_DIAG_BL = 0x0105

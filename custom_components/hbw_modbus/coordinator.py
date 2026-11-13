@@ -6,16 +6,23 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 import logging
 import time
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .blindcalc import POS_MAX, BlindCurve
 from .client import HbwModbusClient, ModbusConnectionError, ModbusError, ModbusExceptionResponse
 from .health import module_health
 from .const import (
     DOMAIN,
+    BLIND_ARRIVAL_MARGIN,
+    BLIND_MIN_CHECK,
+    BLIND_START_WAIT,
+    BLIND_TICK,
     BUS_RATE_WINDOW,
     FW_BUS_BL,
     FW_BUS_S0,
@@ -128,6 +135,18 @@ class ModuleData:
         return any(b["status"] in (BLIND_OPENING, BLIND_CLOSING) for b in self.blinds)
 
 
+@dataclass
+class BlindMotion:
+    """Laufende Fahrt, verankert an der letzten Rückmeldung des Moduls."""
+
+    t0: float        # time.monotonic() der Rückmeldung
+    p0: int          # Position dabei, 0..10000
+    up: bool
+    target: int      # Ziel 0..10000
+    end: float       # berechnete Ankunft (time.monotonic())
+    curve: BlindCurve
+
+
 def _u32(regs: list[int], n: int) -> list[int]:
     return [(regs[2 * i] << 16) | regs[2 * i + 1] for i in range(n)]
 
@@ -201,6 +220,12 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         self._offline = False   # letzte Abfrage ohne Antwort -> selten und kurz fragen
         self.teach_done: set[int] = set()   # Rollläden (1..n), deren Einlernfahrt gerade fertig wurde
         self.health = module_health(hass, entry)
+        # Rollladenfahrten: Position rechnet HA selbst, nachgefragt wird bei Ankunft
+        self.blind_motion: dict[int, BlindMotion] = {}
+        self._blind_target: dict[int, int] = {}        # Ziel des letzten Fahrbefehls
+        self._blind_start_wait: dict[int, float] = {}  # Fahrbefehl gesendet, Anlauf erwartet bis
+        self._unsub_arrival = None
+        self._unsub_tick = None
         # Busstatistik: Stand der letzten Abfrage, Zuwächse der letzten Stunde
         self._bus_prev: tuple[int, ...] | None = None
         self._bus_window: deque[tuple[float, int, int]] = deque()
@@ -271,8 +296,87 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         await self.client.write_register(
             self.unit, 10 * blind + HR_BLIND_CMD, command, retry=command not in (10, 11)
         )
-        self.update_interval = SCAN_INTERVAL_MOVING
+        if command in (0, 1, 2):
+            self.note_blind_command(blind, {0: 0, 1: POS_MAX}.get(command))
+        else:
+            self.update_interval = SCAN_INTERVAL_MOVING   # Einlernen: Schritte sofort sehen
         await self.async_refresh()
+
+    def note_blind_command(self, blind: int, target: int | None) -> None:
+        """Vor dem Neulesen nach einem Fahrbefehl: Ziel 0..10000, None = Stopp."""
+        if target is None:
+            self._blind_target.pop(blind, None)
+            self._blind_start_wait.pop(blind, None)
+        else:
+            self._blind_target[blind] = target
+            self._blind_start_wait[blind] = time.monotonic() + BLIND_START_WAIT
+
+    def blind_live_position(self, blind: int) -> int | None:
+        """Gerechnete Position (0..100 %) während einer Fahrt, sonst None."""
+        m = self.blind_motion.get(blind)
+        if m is None:
+            return None
+        pos = m.curve.position(m.p0, m.up, (time.monotonic() - m.t0) * 1000)
+        pos = min(pos, m.target) if m.up else max(pos, m.target)
+        return round(pos / 100)
+
+    def _track_blinds(self, data: ModuleData) -> None:
+        """Nach jeder Abfrage: Fahrten an der Rückmeldung des Moduls verankern,
+        Ankunft berechnen und genau dann wieder nachfragen."""
+        now = time.monotonic()
+        for i, b in enumerate(data.blinds, 1):
+            par = data.blind_par[i - 1] if len(data.blind_par) >= i else None
+            moving = b["status"] in (BLIND_OPENING, BLIND_CLOSING) and not b["teach"]
+            if moving and par:
+                up = b["status"] == BLIND_OPENING
+                p0 = b["position"] * 100
+                target = self._blind_target.get(i)
+                if target is None or (up and target < p0) or (not up and target > p0):
+                    target = POS_MAX if up else 0   # z. B. Referenzfahrt über die Endlage
+                curve = BlindCurve(par)
+                rest = curve.travel_ms(p0, target) + curve.end_extra(target, up)
+                self.blind_motion[i] = BlindMotion(now, p0, up, target, now + rest / 1000, curve)
+                self._blind_start_wait.pop(i, None)
+            else:
+                self.blind_motion.pop(i, None)
+                if self._blind_start_wait.get(i, 0) <= now:
+                    self._blind_start_wait.pop(i, None)
+                    self._blind_target.pop(i, None)
+        self._schedule_blind_checks(now)
+
+    def _schedule_blind_checks(self, now: float) -> None:
+        if self._unsub_arrival:
+            self._unsub_arrival()
+            self._unsub_arrival = None
+        delays = []
+        if self.blind_motion:
+            arrival = min(m.end for m in self.blind_motion.values())
+            delays.append(max(arrival - now + BLIND_ARRIVAL_MARGIN, BLIND_MIN_CHECK))
+        if any(t > now for t in self._blind_start_wait.values()):
+            delays.append(BLIND_MIN_CHECK)   # Befehl gesendet, Fahrt noch nicht gemeldet
+        if delays:
+            self._unsub_arrival = async_call_later(self.hass, min(delays), self._blind_check)
+        if self.blind_motion and self._unsub_tick is None:
+            self._unsub_tick = async_call_later(self.hass, BLIND_TICK, self._blind_tick)
+
+    async def _blind_check(self, _now: Any) -> None:
+        self._unsub_arrival = None
+        await self.async_refresh()
+
+    @callback
+    def _blind_tick(self, _now: Any) -> None:
+        """Anzeige während der Fahrt fortschreiben – ohne Busverkehr."""
+        self._unsub_tick = None
+        if self.blind_motion:
+            self.async_update_listeners()
+            self._unsub_tick = async_call_later(self.hass, BLIND_TICK, self._blind_tick)
+
+    async def async_shutdown(self) -> None:
+        for unsub in (self._unsub_arrival, self._unsub_tick):
+            if unsub:
+                unsub()
+        self._unsub_arrival = self._unsub_tick = None
+        await super().async_shutdown()
 
     async def async_set_force(self, channel: int, on: bool) -> None:
         """Kanal (1..N) auf „Dauer ein“ setzen oder freigeben. Gesetzt geht
@@ -444,6 +548,9 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         data.bus_error_rate = self._bus_rate
         data.lost_requests = self.lost_requests
         data.lost_responses = self.lost_responses
-        # während einer Rollladenfahrt jede Sekunde abfragen
-        self.update_interval = SCAN_INTERVAL_MOVING if data.blind_moving else SCAN_INTERVAL
+        # Einlernfahrt: jede Sekunde abfragen. Normale Fahrten rechnet HA selbst
+        # und fragt erst bei der berechneten Ankunft nach (_track_blinds).
+        teaching = any(b["teach"] for b in data.blinds)
+        self.update_interval = SCAN_INTERVAL_MOVING if teaching else SCAN_INTERVAL
+        self._track_blinds(data)
         return data

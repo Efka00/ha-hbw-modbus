@@ -87,7 +87,13 @@ einem Rollladen (Auf, Ab, Stopp, Position). Fahrlogik, Kennlinie und
 Schutzpausen laufen im Modul. Solange die Position nach dem Einrichten oder
 einem Neustart während der Fahrt unbekannt ist, zeigt HA keine Position an;
 die erste Fahrt in eine Endlage macht sie wieder bekannt. Während einer
-Fahrt fragt die Integration jede Sekunde ab. Positionen: 0 % = zu, 10 % = Lüftungsschlitze
+Fahrt rechnet die Integration die Position selbst fort – mit derselben
+Wickelkennlinie wie das Modul (`blindcalc.py`, gegen den Firmware-Code
+getestet) – und fragt das Modul erst bei der berechneten Ankunft wieder ab.
+Das spart pro Fahrt rund 90 % der Busanfragen, wichtig wenn viele Rollläden
+gleichzeitig fahren. Die Endposition kommt immer aus dem Modul; unterwegs
+kann die Anzeige um 1–2 % abweichen (Relaispausen vor dem Anlauf). Nur
+während einer Einlernfahrt fragt sie jede Sekunde ab. Positionen: 0 % = zu, 10 % = Lüftungsschlitze
 ganz offen (ab Firmware HBW-MB-Sw v1.09 / HBW-MB-Bl v1.06, vorher 1 %),
 50 % = Endleiste in der Fenstermitte, 100 % = auf. Dafür muss die „Zeit
 bis Endleiste hebt ab“ eingestellt sein.
