@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
 
@@ -11,6 +13,8 @@ from .client import ModbusError
 from .const import CONF_CHANNEL_TYPES, HR_TIMER, HR_TOGGLE, KIND_SWITCH, TYPE_SWITCH
 from .coordinator import HbwCoordinator
 from .entity import HbwEntity
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def channel_type(entry: ConfigEntry, channel: int) -> str:
@@ -58,11 +62,17 @@ class HbwChannel(HbwEntity):
         left = timers[self.channel - 1] if len(timers) >= self.channel else 0
         return {"timer_remaining": left, "always_on": self._forced}
 
-    def _check_forced(self) -> None:
-        if self._forced:
-            raise HomeAssistantError(
-                f"Kanal {self.channel} steht auf „Dauer ein“ und lässt sich nicht ausschalten"
-            )
+    def _ignore_forced(self, what: str) -> bool:
+        """Kanal auf „Dauer ein“: Ausschalten, Umschalten und Timer still ignorieren.
+        Kein Fehler, damit Automationen und Assist („alles aus“) ungestört
+        weiterlaufen; der Kanal bleibt an und zeigt das auch gleich wieder."""
+        if not self._forced:
+            return False
+        _LOGGER.debug(
+            "%s Kanal %d: %s ignoriert, steht auf „Dauer ein“", self.coordinator.name, self.channel, what
+        )
+        self.async_write_ha_state()
+        return True
 
     async def _write(self, coro, on: bool | None, timer: int = 0) -> None:
         """Befehl senden und den quittierten Zustand sofort anzeigen.
@@ -86,19 +96,22 @@ class HbwChannel(HbwEntity):
         await self._write(c.client.write_coil(c.unit, self.channel - 1, True), True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        self._check_forced()
+        if self._ignore_forced("Ausschalten"):
+            return
         c = self.coordinator
         await self._write(c.client.write_coil(c.unit, self.channel - 1, False), False)
 
     async def async_toggle(self, **kwargs: Any) -> None:
         """Umschalten im Modul selbst (HR7), unabhängig vom zuletzt gelesenen Zustand."""
-        self._check_forced()
+        if self._ignore_forced("Umschalten"):
+            return
         c = self.coordinator
         await self._write(c.client.write_register(c.unit, HR_TOGGLE, self._bit), None)
 
     async def async_turn_on_for(self, seconds: int) -> None:
         """Einschalten, das Modul schaltet nach `seconds` Sekunden selbst wieder aus."""
-        self._check_forced()
+        if self._ignore_forced("Einschalten mit Timer"):
+            return
         c = self.coordinator
         await self._write(
             c.client.write_register(c.unit, HR_TIMER + self.channel - 1, seconds, retry=True), True, seconds

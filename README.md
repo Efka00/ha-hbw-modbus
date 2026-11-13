@@ -121,9 +121,11 @@ Strom brauchen: Am Kanalgerät steht unter „Konfiguration“ der Schalter
 
 - Eingeschaltet geht der Kanal sofort an. Das Modul hält ihn selbst an,
   auch nach einem Stromausfall und unabhängig von Home Assistant.
-- Ausschalten, Umschalten und Timer auf diesem Kanal lehnt die Integration
-  mit einer Meldung ab, das Modul ignoriert sie ebenfalls. Auch „alle
-  Lichter im Raum aus“ schaltet ihn nicht ab.
+- Ausschalten, Umschalten und Timer auf diesem Kanal ignoriert die
+  Integration still (ab v0.12.1, vorher mit Fehlermeldung), der Kanal
+  bleibt an. So laufen Automationen, Szenen und Assist („alle Lichter im
+  Raum aus“) ohne Fehler weiter, nur dieser Kanal bleibt an. Das Modul
+  selbst würde einen Ausschaltbefehl ebenfalls ablehnen.
 - Wieder ausgeschaltet bleibt der Kanal zunächst an und lässt sich dann
   normal schalten.
 - Das Attribut `always_on` am Kanalschalter zeigt die Sperre an.
