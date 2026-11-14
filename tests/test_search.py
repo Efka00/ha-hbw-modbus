@@ -4,8 +4,9 @@ oder spätestens nach 30 Minuten."""
 from datetime import timedelta
 
 from homeassistant.components import persistent_notification
-from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
@@ -83,3 +84,25 @@ async def test_found_expires_after_30_min(hass: HomeAssistant, gateway) -> None:
     assert bus.status == STATUS_IDLE
     assert not _notified(hass, entry)
     assert bus._watch == []
+
+
+async def test_new_module_gets_id(hass: HomeAssistant, gateway) -> None:
+    """Frischer Nano unter 247: ID vergeben, Modul hört danach auf die neue ID,
+    Eintrag ist eingerichtet, die Suche steht auf „Erledigt“."""
+    entry, bus = await _bus(hass, gateway)
+    gateway.modules[247].stored_id = 247
+    flow = hass.config_entries.flow.async_progress_by_handler(DOMAIN)[0]
+    assert flow["step_id"] == "assign_id"
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {CONF_DEVICE_ADDRESS: 4, CONF_NAME: ""}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "HBWMB_A04"
+    assert 4 in gateway.modules and 247 not in gateway.modules
+    await hass.async_block_till_done()
+    assert hass.states.get("switch.hbwmb_a04_kanal_1") is not None
+    _later(hass, seconds=20)
+    await hass.async_block_till_done()
+    assert bus.status == STATUS_DONE
+    assert bus.result == "Erledigt: eingerichtet ID 4."
+    assert not _notified(hass, entry)

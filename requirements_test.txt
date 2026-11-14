@@ -1,0 +1,2 @@
+# Testumgebung (HA-Version passend zur Zielinstallation)
+pytest-homeassistant-custom-component==0.13.375

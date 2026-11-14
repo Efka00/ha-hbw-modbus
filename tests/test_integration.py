@@ -11,13 +11,15 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
-from custom_components.hbw_modbus.const import CONF_DEVICE_ADDRESS, DOMAIN
+from custom_components.hbw_modbus.const import CONF_DEVICE_ADDRESS, CONF_KIND, DOMAIN, KIND_SWITCH
 
-from .fake_gateway import FakeSwModule
+from .fake_gateway import FakeBlModule, FakeSwModule
 
 
 async def _flow(hass: HomeAssistant, port: int, unit: int = 3, name: str = "arduinohbwtest"):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    assert result["type"] is FlowResultType.MENU     # Modul oder Bus
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "module"})
     assert result["type"] is FlowResultType.FORM
     return await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -42,7 +44,9 @@ async def test_config_flow_creates_entry(hass: HomeAssistant, gateway) -> None:
     result = await _flow(hass, gateway.port, name="")
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "HBWMB_A03"
-    assert result["data"] == {CONF_HOST: "127.0.0.1", CONF_PORT: gateway.port, CONF_DEVICE_ADDRESS: 3}
+    assert result["data"] == {
+        CONF_HOST: "127.0.0.1", CONF_PORT: gateway.port, CONF_DEVICE_ADDRESS: 3, CONF_KIND: KIND_SWITCH
+    }
     # zweites Mal dasselbe Modul: abgelehnt
     again = await _flow(hass, gateway.port)
     assert again["type"] is FlowResultType.ABORT and again["reason"] == "already_configured"
@@ -57,16 +61,16 @@ async def test_config_flow_no_answer(hass: HomeAssistant, gateway) -> None:
 async def test_device_and_entities(hass: HomeAssistant, gateway) -> None:
     entry = await _setup(hass, gateway.port)
     dev_reg = dr.async_get(hass)
-    device = dev_reg.async_get_device(identifiers={(DOMAIN, entry.unique_id)})
+    device = dev_reg.async_get_device_by_identifier((DOMAIN, entry.unique_id), entry.entry_id)
     assert device is not None
     assert device.name == "arduinohbwtest"
     assert device.manufacturer == "HM485MB"
     assert device.sw_version == "1.07"
     assert device.model == "HBW-MB-Sw (12 Kanäle)"
     sensors = er.async_entries_for_device(er.async_get(hass), device.id)
-    assert len(sensors) == 2           # Laufzeit, CRC (v1.07 ohne Diagnose)
+    assert len(sensors) == 3           # Verbindung, Laufzeit, CRC (v1.07 ohne Diagnose)
     # je Kanal ein eigenes Gerät, verbunden über das Modul
-    channel = dev_reg.async_get_device(identifiers={(DOMAIN, f"{entry.unique_id}_ch1")})
+    channel = dev_reg.async_get_device_by_identifier((DOMAIN, f"{entry.unique_id}_ch1"), entry.entry_id)
     assert channel is not None
     assert channel.name == "arduinohbwtest Kanal 1"
     assert channel.model == "HBWMB_A03" and channel.manufacturer == "HM485MB"
@@ -105,7 +109,7 @@ async def test_foreign_responses_ignored(hass: HomeAssistant, gateway) -> None:
     mod = gateway.modules[3]
     mod.outputs = 0b1
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=6))
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert hass.states.get("switch.arduinohbwtest_kanal_1").state == "on"
     assert hass.states.get("sensor.arduinohbwtest_laufzeit").state != "unavailable"
 
@@ -117,7 +121,8 @@ async def test_unavailable_and_recovery(hass: HomeAssistant, gateway) -> None:
     await hass.async_block_till_done(wait_background_tasks=True)
     assert hass.states.get("switch.arduinohbwtest_kanal_1").state == "unavailable"
     gateway.modules[3] = mod
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=20))
+    # ohne Antwort fragt HA nur noch jede Minute
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=70))
     await hass.async_block_till_done(wait_background_tasks=True)
     assert hass.states.get("switch.arduinohbwtest_kanal_1").state == "off"
 
@@ -129,7 +134,35 @@ async def test_diag_with_v108_and_blind_lock(hass: HomeAssistant, gateway) -> No
     assert hass.states.get("switch.arduinohbwtest_kanal_2") is None
     assert hass.states.get("switch.arduinohbwtest_kanal_3") is not None
     assert hass.states.get("sensor.arduinohbwtest_neustart_grund").state == "watchdog"
-    assert hass.states.get("sensor.arduinohbwtest_watchdog_neustarte").state == "1"
+    assert hass.states.get("sensor.arduinohbwtest_watchdog_neustarts").state == "1"
     assert hass.states.get("sensor.arduinohbwtest_starts").state == "7"
     assert float(hass.states.get("sensor.arduinohbwtest_betriebsspannung").state) == pytest.approx(4.98)
     assert float(hass.states.get("sensor.arduinohbwtest_laufzeit").state) == pytest.approx(3725 / 3600, abs=0.01)
+
+
+
+async def test_blind_module(hass: HomeAssistant, gateway) -> None:
+    gateway.modules.clear()
+    gateway.modules[5] = mod = FakeBlModule()
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="HBWMB_A05",
+        unique_id=f"127.0.0.1:{gateway.port}:5",
+        data={CONF_HOST: "127.0.0.1", CONF_PORT: gateway.port, CONF_DEVICE_ADDRESS: 5},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    covers = sorted(s.entity_id for s in hass.states.async_all("cover"))
+    assert covers == [f"cover.hbwmb_a05_rollladen_{n}" for n in range(1, 5)]
+    assert hass.states.get("cover.hbwmb_a05_rollladen_2").attributes["current_position"] == 100
+    await hass.services.async_call("cover", "close_cover", {"entity_id": "cover.hbwmb_a05_rollladen_2"}, blocking=True)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert (6, 20, 0) in mod.writes           # HR20 = Befehl Rollladen 2: zu
+    assert hass.states.get("cover.hbwmb_a05_rollladen_2").state == "closed"
+    await hass.services.async_call(
+        "cover", "set_cover_position", {"entity_id": "cover.hbwmb_a05_rollladen_3", "position": 40}, blocking=True
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert (6, 31, 40) in mod.writes          # HR31 = Position Rollladen 3
+    assert hass.states.get("cover.hbwmb_a05_rollladen_3").attributes["current_position"] == 40

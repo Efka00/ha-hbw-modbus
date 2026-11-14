@@ -9,12 +9,13 @@ import voluptuous as vol
 
 from homeassistant.config_entries import SOURCE_INTEGRATION_DISCOVERY, ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers.event import async_call_later
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import (
     config_validation as cv,
     device_registry as dr,
+    entity_platform,
     entity_registry as er,
     discovery_flow,
     service,
@@ -38,7 +39,7 @@ from .const import (
     SERVICE_SET_METER_READING,
     SERVICE_TURN_ON_FOR,
 )
-from .channel import channel_type, free_channels
+from .channel import HbwChannel, channel_type, free_channels
 from .coordinator import HbwCoordinator, probe_module
 from .health import forget_health, module_health
 from .discovery import HbwBus, bus_unique_id
@@ -62,15 +63,31 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Dienst einmal für alle Module registrieren."""
-    for domain in (Platform.SWITCH, Platform.LIGHT):
-        service.async_register_platform_entity_service(
-            hass,
-            DOMAIN,
-            SERVICE_TURN_ON_FOR,
-            entity_domain=domain,
-            schema={vol.Required(ATTR_SECONDS): vol.All(cv.positive_int, vol.Range(min=1, max=65535))},
-            func="async_turn_on_for",
-        )
+
+    async def turn_on_for(call: ServiceCall) -> None:
+        """Für Schalter und Lichter gemeinsam. Zweimal registrieren (je Domäne)
+        geht nicht: Die zweite Registrierung ersetzt die erste."""
+        wanted = await service.async_extract_entity_ids(call)
+        channels = [
+            entity
+            for platform in entity_platform.async_get_platforms(hass, DOMAIN)
+            if platform.domain in (Platform.SWITCH, Platform.LIGHT)
+            for entity_id, entity in platform.entities.items()
+            if entity_id in wanted and isinstance(entity, HbwChannel)
+        ]
+        if not channels:
+            raise ServiceValidationError(f"Kein Relaiskanal von {DOMAIN} unter: {', '.join(sorted(wanted))}")
+        for entity in channels:
+            await entity.async_turn_on_for(call.data[ATTR_SECONDS])
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_TURN_ON_FOR,
+        turn_on_for,
+        schema=cv.make_entity_service_schema(
+            {vol.Required(ATTR_SECONDS): vol.All(cv.positive_int, vol.Range(min=1, max=65535))}
+        ),
+    )
     service.async_register_platform_entity_service(
         hass,
         DOMAIN,
