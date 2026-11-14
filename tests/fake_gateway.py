@@ -132,6 +132,8 @@ class FakeSwModule(FakeModule):
     blind_act: int = 0
     blind_dir: int = 0
     force: int = 0                # HR8 ab v1.10
+    power_on: int = 1             # HR3 Einschaltverhalten
+    blind_up: int = 0             # HR6 Richtungskanal an = auf
     timers: dict[int, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -151,7 +153,8 @@ class FakeSwModule(FakeModule):
 
     def hr(self, a: int) -> int | None:
         if a <= 7:
-            return [self.stored_id, self.invert, self.outputs, 1, self.blind_act, self.blind_dir, 0, 0][a]
+            return [self.stored_id, self.invert, self.outputs, self.power_on, self.blind_act, self.blind_dir,
+                    self.blind_up, 0][a]
         if a == 8 and self.has_force:
             return self.force
         if 20 <= a < 20 + self.channels:
@@ -168,11 +171,24 @@ class FakeSwModule(FakeModule):
             self.outputs &= ~(1 << ch)
 
     def write_hr(self, a: int, v: int) -> bool:
-        if a in (0, 1):
+        if a == 0:
+            return super().write_hr(a, v)
+        if a in (1, 3):
             if a == 1:
                 self.invert = v
-                return True
-            return super().write_hr(a, v)
+            else:
+                self.power_on = v
+            return True
+        if a in (4, 5, 6):
+            if a == 6:
+                self.blind_up = v
+            elif a == 4:
+                self.blind_act = v
+            else:
+                self.blind_dir = v
+            if self.lock and not self.blinds:
+                self.blinds = [FakeBlind()]
+            return True
         if a == 7:
             self.outputs ^= v & ~self.lock & ~self.force
             return True
@@ -217,6 +233,59 @@ class FakeBlModule(FakeModule):
     def __post_init__(self) -> None:
         if not self.blinds:
             self.blinds = [FakeBlind() for _ in range(self.channels)]
+
+
+@dataclass
+class FakeS0Module(FakeModule):
+    """Zählermodul (HBW-MB-S0): IR7 = 3, Zählerstände IR/HR10.., Impulse IR40..71,
+    HR1 Entprellzeit, HR2 Speicherintervall."""
+
+    channels: int = 8
+    firmware: int = 0x0103
+    stored_id: int = 21
+    debounce: int = 10
+    interval: int = 10
+    counts: list[int] = field(default_factory=lambda: [0] * 8)
+
+    diag_from = 0
+    bus_from = 0x0103
+
+    def ir(self, a: int) -> int | None:
+        if a == 7:
+            return 3
+        if 10 <= a < 10 + 2 * self.channels:
+            v = self.counts[(a - 10) // 2]
+            return v >> 16 if (a - 10) % 2 == 0 else v & 0xFFFF
+        if 40 <= a < 40 + 4 * self.channels:
+            return 0xFFFF   # noch kein Impuls
+        return super().ir(a)
+
+    def hr(self, a: int) -> int | None:
+        if a == 0:
+            return self.stored_id
+        if a == 1:
+            return self.debounce
+        if a == 2:
+            return self.interval
+        if 10 <= a < 10 + 2 * self.channels:
+            return self.ir(a)
+        return None
+
+    def write_hr(self, a: int, v: int) -> bool:
+        if a == 0:
+            return super().write_hr(a, v)
+        if a == 1:
+            self.debounce = v
+            return True
+        if a == 2:
+            self.interval = v
+            return True
+        if 10 <= a < 10 + 2 * self.channels:
+            i, low = divmod(a - 10, 2)
+            old = self.counts[i]
+            self.counts[i] = (old & 0xFFFF0000) | v if low else (v << 16) | (old & 0xFFFF)
+            return True
+        return False
 
 
 class FakeGateway:

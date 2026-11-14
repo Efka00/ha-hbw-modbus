@@ -137,6 +137,7 @@ class HbwBus:
         self._listeners: list[Callable[[], None]] = []
         self._watch: list[Callable[[], None]] = []   # Abmelder der Beobachtung „gefunden“
         self._configured_before: set[int] = set()
+        self.replaced: dict[int, str] = {}   # ID -> Name: als Ersatz eingesetzt (config_flow)
         entry.async_on_unload(self._stop_watch)
 
     def add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
@@ -196,10 +197,10 @@ class HbwBus:
             return
         self._stop_watch()
         added = sorted(known_units(self.hass, self.host, self.port, False) - self._configured_before)
+        done = [f"eingerichtet {', '.join(f'ID {u}' for u in added)}"] if added else []
+        done += [f"{name} (ID {u}) ersetzt" for u, name in sorted(self.replaced.items())]
         result = (
-            f"Erledigt: eingerichtet {', '.join(f'ID {u}' for u in added)}."
-            if added
-            else "Erledigt: Rückfrage geschlossen, nichts eingerichtet."
+            f"Erledigt: {'; '.join(done)}." if done else "Erledigt: Rückfrage geschlossen, nichts eingerichtet."
         )
         persistent_notification.async_dismiss(self.hass, self._notification_id)
         self._set(STATUS_DONE, result=result)
@@ -233,6 +234,7 @@ class HbwBus:
         self._stop_watch()
         configured = known_units(self.hass, self.host, self.port, False)
         self._configured_before = configured
+        self.replaced = {}
         ignored = known_units(self.hass, self.host, self.port, True)
         if full:
             units = [u for u in SCAN_IDS if u not in configured]
@@ -266,7 +268,9 @@ class HbwBus:
                 lines.append(f"- ID {unit}: {label} – in HA ignoriert")
                 continue
             if unit == SERVICE_ID:
-                lines.append(f"- {label} ohne eigene ID (247) – ID vergeben unter „Geräte & Dienste“")
+                lines.append(
+                    f"- {label} ohne eigene ID (247) – ID vergeben oder als Ersatz einsetzen unter „Geräte & Dienste“"
+                )
             else:
                 lines.append(f"- ID {unit}: {label} – hinzufügen unter „Geräte & Dienste“")
             found_new += 1

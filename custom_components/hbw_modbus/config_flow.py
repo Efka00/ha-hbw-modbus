@@ -10,7 +10,9 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import (
+    SOURCE_IGNORE,
     ConfigEntry,
+    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
@@ -20,6 +22,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from . import acquire_client, release_client
+from .backup import module_store, restore
 from .client import ModbusConnectionError, ModbusError
 from .const import (
     CONF_DEVICE_ADDRESS,
@@ -38,13 +41,14 @@ from .const import (
     SEARCH_TIMEOUT,
     SERVICE_ID,
 )
-from .coordinator import ModuleInfo, probe_module
+from .coordinator import ModuleInfo, firmware_str, probe_module
 from .discovery import (
     CONF_CHANNELS,
     CONF_FIRMWARE,
     CONF_HBW_ADDRESS,
     CONF_STORED_ID,
     CTX_NEW_MODULE,
+    HbwBus,
     bus_unique_id,
     known_units,
     module_unique_id,
@@ -52,6 +56,7 @@ from .discovery import (
 )
 from .entity import module_name
 
+CONF_REPLACE = "replace_entry"
 
 def _id_selector(kind: str) -> selector.NumberSelector:
     ids = ID_RANGES[kind]
@@ -68,6 +73,8 @@ class HbwModbusConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._disc: dict[str, Any] = {}
         self._info: ModuleInfo | None = None
+        # Ersatz-Kandidaten für ein Modul unter 247: entry_id -> (Eintrag, Sicherung)
+        self._candidates: dict[str, tuple[ConfigEntry, dict[str, Any]]] = {}
 
     @staticmethod
     @callback
@@ -183,6 +190,9 @@ class HbwModbusConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="already_in_progress")
             self.context[CTX_NEW_MODULE] = key
             self.context["title_placeholders"] = {"name": f"{self._info.model}, ohne ID"}
+            self._candidates = await self._replace_candidates(host, port)
+            if self._candidates:
+                return await self.async_step_new_or_replace()
             return await self.async_step_assign_id()
         await self.async_set_unique_id(module_unique_id(host, port, unit))
         self._abort_if_unique_id_configured()
@@ -252,6 +262,102 @@ class HbwModbusConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders=self._placeholders(),
         )
+
+    # ------------------------------------------------------- Modul tauschen
+
+    async def _replace_candidates(self, host: str, port: int) -> dict[str, tuple[ConfigEntry, dict[str, Any]]]:
+        """Module an diesem Gateway, die gerade nicht antworten und deren
+        Sicherung zum neuen Modul passt (gleiche Art, gleich viele Kanäle)."""
+        assert self._info is not None
+        found: dict[str, tuple[ConfigEntry, dict[str, Any]]] = {}
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            data = entry.data
+            if (
+                entry.source == SOURCE_IGNORE
+                or data.get(CONF_KIND) == KIND_BUS
+                or CONF_DEVICE_ADDRESS not in data
+                or data.get(CONF_HOST) != host
+                or data.get(CONF_PORT) != port
+            ):
+                continue
+            coordinator = None
+            if entry.state is ConfigEntryState.LOADED:
+                coordinator = getattr(getattr(entry, "runtime_data", None), "coordinator", None)
+            if coordinator is not None and coordinator.last_update_success:
+                continue   # antwortet, ist kein Ausfall
+            backup = coordinator.backup if coordinator is not None else None
+            if backup is None:
+                backup = ((await module_store(self.hass, entry.entry_id).async_load()) or {}).get("backup")
+            if (
+                isinstance(backup, dict)
+                and backup.get("kind") == self._info.kind
+                and backup.get("channels") == self._info.channels
+            ):
+                found[entry.entry_id] = (entry, backup)
+        return found
+
+    async def async_step_new_or_replace(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Modul unter 247, und ein Modul derselben Art antwortet nicht: neu oder Ersatz?"""
+        return self.async_show_menu(
+            step_id="new_or_replace",
+            menu_options=["replace", "assign_id"],
+            description_placeholders={**self._placeholders(), "missing": self._candidate_list()},
+        )
+
+    def _candidate_list(self) -> str:
+        return ", ".join(f"{e.title} (ID {e.data[CONF_DEVICE_ADDRESS]})" for e, _ in self._candidates.values())
+
+    async def async_step_replace(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Ersatz: gesicherte Einstellungen und die alte ID ins neue Modul schreiben.
+        Der Eintrag in HA bleibt derselbe."""
+        assert self._info is not None
+        host, port = self._disc[CONF_HOST], self._disc[CONF_PORT]
+        placeholders = {**self._placeholders(), "old_firmware": "", "registers": ""}
+        errors: dict[str, str] = {}
+        if user_input is not None and user_input[CONF_REPLACE] in self._candidates:
+            entry, backup = self._candidates[user_input[CONF_REPLACE]]
+            unit = int(entry.data[CONF_DEVICE_ADDRESS])
+            if self._info.firmware < int(backup["firmware"]):
+                placeholders["old_firmware"] = firmware_str(int(backup["firmware"]))
+                errors["base"] = "firmware_older"
+            else:
+                client = acquire_client(self.hass, host, port)
+                try:
+                    failed = await restore(client, SERVICE_ID, backup)
+                finally:
+                    await release_client(self.hass, client)
+                if failed:
+                    placeholders["registers"] = ", ".join(f"HR{r}" for r in failed)
+                    errors["base"] = "restore_failed"
+                else:
+                    errors = await self._write_id(host, port, unit)
+            if not errors:
+                self._note_replaced(host, port, unit, entry.title)
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                return self.async_abort(
+                    reason="replaced", description_placeholders={"name": entry.title, "unit": str(unit)}
+                )
+        options = [
+            selector.SelectOptionDict(value=entry_id, label=f"{e.title} (ID {e.data[CONF_DEVICE_ADDRESS]})")
+            for entry_id, (e, _) in self._candidates.items()
+        ]
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_REPLACE, default=options[0]["value"]): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=options, mode=selector.SelectSelectorMode.LIST)
+                )
+            }
+        )
+        return self.async_show_form(
+            step_id="replace", data_schema=schema, errors=errors, description_placeholders=placeholders
+        )
+
+    def _note_replaced(self, host: str, port: int, unit: int, title: str) -> None:
+        """Dem Bus-Gerät melden, damit die Suche „Erledigt: … ersetzt“ zeigt."""
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            bus = getattr(entry, "runtime_data", None)
+            if isinstance(bus, HbwBus) and bus.host == host and bus.port == port:
+                bus.replaced[unit] = title
 
     async def _write_id(self, host: str, port: int, new_id: int) -> dict[str, str]:
         """Neue ID nur schreiben, wenn sie am Bus frei ist; danach prüfen, ob das

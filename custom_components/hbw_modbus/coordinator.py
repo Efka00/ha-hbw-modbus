@@ -11,9 +11,9 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from . import backup as bk
 from .blindcalc import POS_MAX, BlindCurve
 from .client import HbwModbusClient, ModbusConnectionError, ModbusError, ModbusExceptionResponse
 from .health import module_health
@@ -115,6 +115,7 @@ class ModuleData:
     """Zustand nach einer Abfrage."""
 
     outputs: int = 0
+    config: list[int] | None = None  # Schaltmodul: HR0..7 (HR8 ab v1.10)
     lock_mask: int = 0               # Kanäle eines Rollladens (nicht schaltbar)
     force_mask: int = 0              # Kanäle auf „Dauer ein“ (HR8)
     timers: list[int] = field(default_factory=list)
@@ -211,7 +212,11 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         # Meldet das Modul weniger (Impulse seit dem letzten Speichern im Modul
         # beim Stromausfall verloren), wird der Stand zurückgeschrieben.
         self.known_counts: list[int] = []
-        self._store: Store[dict] = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
+        self._store = bk.module_store(hass, entry.entry_id)
+        # Sicherung der Einstellungen im Modul (für den Modultausch, backup.py)
+        self.backup: dict[str, Any] | None = None
+        self._s0_config: list[int] | None = None   # Zähler: HR1..2, einmal gelesen
+        self._unsaved = False   # verzögertes Speichern steht noch aus
         self._setup_lock: int | None = None   # Rollladen-Kanäle beim Einrichten
         self._reload_scheduled = False
         # Rollladen-Einstellungen ändern sich nur über HA oder eine Einlernfahrt:
@@ -376,6 +381,9 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
             if unsub:
                 unsub()
         self._unsub_arrival = self._unsub_tick = None
+        if self._unsaved:   # z. B. Neuladen nach einem Modultausch: nichts verlieren
+            await self._store.async_save(self._stored())
+            self._unsaved = False
         await super().async_shutdown()
 
     async def async_set_force(self, channel: int, on: bool) -> None:
@@ -390,13 +398,33 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         self.async_set_updated_data(replace(self.data, force_mask=mask, outputs=outputs))
 
     async def async_load_counts(self) -> None:
+        """Gespeichertes laden: Zählerstände und Sicherung der Einstellungen."""
         stored = await self._store.async_load()
         if stored and isinstance(stored.get("counts"), list):
             self.known_counts = [int(v) for v in stored["counts"]]
+        if stored and isinstance(stored.get("backup"), dict):
+            self.backup = stored["backup"]
+
+    def _stored(self) -> dict[str, Any]:
+        return {"counts": list(self.known_counts), "backup": self.backup}
+
+    def _save(self, delay: float = 60) -> None:
+        stored = self._stored()
+        self._unsaved = True
+        self._store.async_delay_save(lambda: stored, delay)
 
     def _save_counts(self) -> None:
-        counts = list(self.known_counts)
-        self._store.async_delay_save(lambda: {"counts": counts}, 60)
+        self._save()
+
+    def _update_backup(self, data: ModuleData) -> None:
+        """Sicherung fortschreiben, wenn sich eine Einstellung im Modul geändert hat."""
+        new = bk.collect(
+            self.info.kind, self.info.firmware, self.info.channels, data.config,
+            data.blind_par, self._s0_config, self.info.has_force,
+        )
+        if new is not None and not bk.same(new, self.backup):
+            self.backup = bk.stamped(new)
+            self._save(10)
 
     async def async_set_count(self, channel: int, value: int) -> None:
         """Zählerstand eines Eingangs (1..N) setzen, auch nach unten."""
@@ -482,6 +510,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         config = await self.client.read_registers(
             self.unit, False, HR_CONFIG, 9 if self.info.has_force else 8
         )
+        data.config = config
         data.outputs = config[HR_OUTPUTS]
         data.force_mask = config[HR_FORCE] if self.info.has_force else 0
         data.lock_mask = lock_mask(config, self.info.channels)
@@ -512,6 +541,8 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
                 data.intervals = _u32(pulse[: 2 * n], n)
                 data.since = _u32(pulse[2 * n :], n)
                 await self._check_counts(data)
+                if self._s0_config is None:
+                    self._s0_config = await self.client.read_registers(self.unit, False, 1, 2)
             if self.info.kind == KIND_SWITCH:
                 await self._read_outputs(data)
                 if data.lock_mask:
@@ -553,4 +584,5 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         teaching = any(b["teach"] for b in data.blinds)
         self.update_interval = SCAN_INTERVAL_MOVING if teaching else SCAN_INTERVAL
         self._track_blinds(data)
+        self._update_backup(data)
         return data

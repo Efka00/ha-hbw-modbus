@@ -45,6 +45,21 @@
           "device_address": "New Modbus ID",
           "name": "Name (empty = HBWMB_A + Modbus ID, counters: HBWMB_S01 …)"
         }
+      },
+      "new_or_replace": {
+        "title": "New module or replacement?",
+        "description": "{model}, firmware {firmware}, answers at service ID 247. Currently unreachable with a matching backup: {missing}.",
+        "menu_options": {
+          "replace": "Replacement for a failed module (take over settings and ID)",
+          "assign_id": "New module: assign ID"
+        }
+      },
+      "replace": {
+        "title": "Use as replacement",
+        "description": "HA writes the saved settings of the failed module to the new one ({model}, firmware {firmware}): inversion, power-on behaviour, blind channels, always on, travel times and taught values, for counters debounce time and save interval. Then it gets the old ID. The entry in HA stays the same, with all entities, names and automations.",
+        "data": {
+          "replace_entry": "Failed module"
+        }
       }
     },
     "error": {
@@ -53,11 +68,14 @@
       "id_in_use": "A device on the bus already answers at this ID.",
       "no_answer": "The module did not answer when writing the ID. Is it still connected?",
       "assign_failed": "The ID was written, but the module does not answer at the new ID.",
-      "id_range": "Switch and blind modules use IDs 1–19, counters 21–29."
+      "id_range": "Switch and blind modules use IDs 1–19, counters 21–29.",
+      "firmware_older": "The firmware of the new module ({firmware}) is older than the old one ({old_firmware}). Flash the current firmware first.",
+      "restore_failed": "The new module did not take these settings: {registers}. The ID was not changed."
     },
     "abort": {
       "already_configured": "This module is already configured.",
-      "already_in_progress": "A confirmation for this module is already pending."
+      "already_in_progress": "A confirmation for this module is already pending.",
+      "replaced": "{name} is replaced: the new module took over the settings and ID {unit} and will be polled again shortly."
     }
   },
   "entity": {

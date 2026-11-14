@@ -45,6 +45,21 @@
           "device_address": "Neue Modbus-ID",
           "name": "Name (leer = HBWMB_A + Modbus-ID, Zähler: HBWMB_S01 …)"
         }
+      },
+      "new_or_replace": {
+        "title": "Neues Modul oder Ersatz?",
+        "description": "{model}, Firmware {firmware}, meldet sich unter der Service-ID 247. Gerade nicht erreichbar und mit passender Sicherung: {missing}.",
+        "menu_options": {
+          "replace": "Ersatz für ein ausgefallenes Modul (Einstellungen und ID übernehmen)",
+          "assign_id": "Neues Modul: ID vergeben"
+        }
+      },
+      "replace": {
+        "title": "Als Ersatz einsetzen",
+        "description": "HA schreibt die gesicherten Einstellungen des ausgefallenen Moduls ins neue ({model}, Firmware {firmware}): Invertierung, Einschaltverhalten, Rollladen-Kanäle, „Dauer ein“, Fahrzeiten und Einlernwerte, beim Zähler Entprellzeit und Speicherintervall. Danach bekommt es die alte ID. Der Eintrag in HA bleibt derselbe, mit allen Entitäten, Namen und Automationen.",
+        "data": {
+          "replace_entry": "Ausgefallenes Modul"
+        }
       }
     },
     "error": {
@@ -53,11 +68,14 @@
       "id_in_use": "Unter dieser ID antwortet am Bus schon ein Gerät.",
       "no_answer": "Das Modul hat auf das Schreiben der ID nicht geantwortet. Hängt es noch am Bus?",
       "assign_failed": "Die ID wurde geschrieben, das Modul antwortet aber nicht unter der neuen ID.",
-      "id_range": "Schalt- und Rollladenmodule bekommen die IDs 1–19, Zähler 21–29."
+      "id_range": "Schalt- und Rollladenmodule bekommen die IDs 1–19, Zähler 21–29.",
+      "firmware_older": "Die Firmware des neuen Moduls ({firmware}) ist älter als die des alten ({old_firmware}). Erst die aktuelle Firmware flashen.",
+      "restore_failed": "Diese Einstellungen hat das neue Modul nicht übernommen: {registers}. Die ID wurde nicht geändert."
     },
     "abort": {
       "already_configured": "Dieses Modul ist schon eingerichtet.",
-      "already_in_progress": "Für dieses Modul läuft schon eine Rückfrage."
+      "already_in_progress": "Für dieses Modul läuft schon eine Rückfrage.",
+      "replaced": "{name} ist ersetzt: Das neue Modul hat die Einstellungen und die ID {unit} übernommen und wird gleich wieder abgefragt."
     }
   },
   "entity": {
