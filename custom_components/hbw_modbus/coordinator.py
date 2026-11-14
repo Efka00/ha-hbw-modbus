@@ -29,7 +29,14 @@ from .const import (
     FW_BUS_SW,
     FW_DIAG_BL,
     FW_DIAG_SW,
+    FW_FAIL_BL,
+    FW_FAIL_SW,
     FW_FORCE_SW,
+    FAIL_BLIND,
+    HR_FAIL_MIN,
+    HR_FAIL_OFF,
+    HR_FAIL_ON,
+    IR_DIAG_COUNT_FAIL,
     HR_FORCE,
     HR_BLIND_ACT,
     HR_CONFIG,
@@ -97,6 +104,13 @@ class ModuleInfo:
         return self.firmware >= need
 
     @property
+    def has_fail(self) -> bool:
+        """Notbetrieb (HR9, HR10n+9, beim Schaltmodul HR40/41, IR39)."""
+        if self.kind == KIND_SWITCH:
+            return self.firmware >= FW_FAIL_SW
+        return self.kind == KIND_BLIND and self.firmware >= FW_FAIL_BL
+
+    @property
     def has_force(self) -> bool:
         """Schaltmodul mit „Dauer ein“ je Kanal (HR8)."""
         return self.kind == KIND_SWITCH and self.firmware >= FW_FORCE_SW
@@ -130,6 +144,12 @@ class ModuleData:
     # Rollläden: beim Rollladenmodul 1..4, beim Schaltmodul höchstens einer
     blinds: list[dict[str, int]] = field(default_factory=list)
     blind_par: list[list[int]] = field(default_factory=list)  # je Rollladen HR10n+2..8
+    # Notbetrieb: Wartezeit (min), Kanäle ein/aus (Bitmasken), je Rollladen 0/1/2, Auslösungen
+    fail_min: int | None = None
+    fail_on: int = 0
+    fail_off: int = 0
+    fail_blind: list[int] = field(default_factory=list)
+    fail_count: int | None = None
 
     @property
     def blind_moving(self) -> bool:
@@ -217,6 +237,10 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         self.backup: dict[str, Any] | None = None
         self._s0_config: list[int] | None = None   # Zähler: HR1..2, einmal gelesen
         self._unsaved = False   # verzögertes Speichern steht noch aus
+        # Notbetrieb: Einstellungen einmal lesen (ändern sich nur über HA),
+        # zuletzt gesehene Auslösungen (Starts des Moduls, Anzahl) im Speicher
+        self._fail: dict[str, Any] | None = None
+        self._fail_seen: list[int] | None = None
         self._setup_lock: int | None = None   # Rollladen-Kanäle beim Einrichten
         self._reload_scheduled = False
         # Rollladen-Einstellungen ändern sich nur über HA oder eine Einlernfahrt:
@@ -386,6 +410,88 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
             self._unsaved = False
         await super().async_shutdown()
 
+    # ------------------------------------------------------------ Notbetrieb
+
+    async def _read_fail(self, blinds: int) -> None:
+        """Einstellungen des Notbetriebs einmal lesen (danach nur über HA geändert)."""
+        fail: dict[str, Any] = {
+            "min": (await self.client.read_registers(self.unit, False, HR_FAIL_MIN, 1))[0],
+            "on": 0,
+            "off": 0,
+            "blind": [
+                (await self.client.read_registers(self.unit, False, 10 * n + FAIL_BLIND, 1))[0]
+                for n in range(1, blinds + 1)
+            ],
+        }
+        if self.info.kind == KIND_SWITCH:
+            fail["on"], fail["off"] = await self.client.read_registers(self.unit, False, HR_FAIL_ON, 2)
+        self._fail = fail
+
+    def _apply_fail(self, data: ModuleData) -> None:
+        f = self._fail
+        if f is None:
+            return
+        data.fail_min, data.fail_on, data.fail_off = f["min"], f["on"], f["off"]
+        data.fail_blind = list(f["blind"])
+
+    def _publish_fail(self) -> None:
+        if self.data is not None:
+            data = replace(self.data)
+            self._apply_fail(data)
+            self.async_set_updated_data(data)
+        self._update_backup_now()
+
+    def _update_backup_now(self) -> None:
+        if self.data is not None:
+            self._update_backup(self.data)
+
+    async def async_set_fail_min(self, minutes: int) -> None:
+        await self.client.write_register(self.unit, HR_FAIL_MIN, minutes, retry=True)
+        assert self._fail is not None
+        self._fail["min"] = minutes
+        self._publish_fail()
+
+    async def async_set_fail_channel(self, channel: int, mode: str) -> None:
+        """Kanal (1..N) bei Ausfall: "nothing", "on" oder "off" (HR40/HR41)."""
+        assert self._fail is not None
+        bit = 1 << (channel - 1)
+        on = (self._fail["on"] | bit) if mode == "on" else (self._fail["on"] & ~bit)
+        off = (self._fail["off"] | bit) if mode == "off" else (self._fail["off"] & ~bit)
+        # erst den freiwerdenden Eintrag löschen, dann setzen: nie in beiden zugleich
+        for reg, key, value in sorted(
+            ((HR_FAIL_ON, "on", on), (HR_FAIL_OFF, "off", off)), key=lambda t: t[2] > self._fail[t[1]]
+        ):
+            if value != self._fail[key]:
+                await self.client.write_register(self.unit, reg, value, retry=True)
+                self._fail[key] = value
+        self._publish_fail()
+
+    async def async_set_fail_blind(self, blind: int, value: int) -> None:
+        """Rollladen n bei Ausfall: 0 nichts, 1 auf, 2 zu (HR10n+9)."""
+        await self.client.write_register(self.unit, 10 * blind + FAIL_BLIND, value, retry=True)
+        assert self._fail is not None
+        self._fail["blind"][blind - 1] = value
+        self._publish_fail()
+
+    def _check_fail_count(self, data: ModuleData) -> None:
+        """Hat der Notbetrieb seit der letzten Abfrage ausgelöst? Dann einmal
+        das Ereignis hbw_modbus_alarm (kind emergency). Gemerkt wird
+        (Starts des Moduls, Auslösungen) – so meldet HA auch nach einem
+        eigenen Neustart nichts doppelt und nach einem Neustart des Moduls
+        jede neue Auslösung."""
+        if data.diag is None or len(data.diag) < IR_DIAG_COUNT_FAIL:
+            return
+        boots, count = data.diag[2], data.diag[9]
+        data.fail_count = count
+        seen = self._fail_seen
+        new = count - seen[1] if seen is not None and seen[0] == boots else count
+        if seen == [boots, count]:
+            return
+        self._fail_seen = [boots, count]
+        self._save(10)
+        if new > 0:
+            self.health.emergency(self._fail["min"] if self._fail else None, new)
+
     async def async_set_force(self, channel: int, on: bool) -> None:
         """Kanal (1..N) auf „Dauer ein“ setzen oder freigeben. Gesetzt geht
         der Kanal sofort an; freigegeben bleibt er an, bis er ausgeschaltet wird."""
@@ -404,9 +510,11 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
             self.known_counts = [int(v) for v in stored["counts"]]
         if stored and isinstance(stored.get("backup"), dict):
             self.backup = stored["backup"]
+        if stored and isinstance(stored.get("fail_seen"), list) and len(stored["fail_seen"]) == 2:
+            self._fail_seen = [int(v) for v in stored["fail_seen"]]
 
     def _stored(self) -> dict[str, Any]:
-        return {"counts": list(self.known_counts), "backup": self.backup}
+        return {"counts": list(self.known_counts), "backup": self.backup, "fail_seen": self._fail_seen}
 
     def _save(self, delay: float = 60) -> None:
         stored = self._stored()
@@ -420,7 +528,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         """Sicherung fortschreiben, wenn sich eine Einstellung im Modul geändert hat."""
         new = bk.collect(
             self.info.kind, self.info.firmware, self.info.channels, data.config,
-            data.blind_par, self._s0_config, self.info.has_force,
+            data.blind_par, self._s0_config, self.info.has_force, self._fail if self.info.has_fail else None,
         )
         if new is not None and not bk.same(new, self.backup):
             self.backup = bk.stamped(new)
@@ -553,8 +661,12 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
                     self._module_changed("Rollladen-Kanäle geändert")
             if self.info.kind == KIND_BLIND:
                 await self._read_blinds(data, self.info.channels)
+            if self.info.has_fail and self._fail is None:
+                await self._read_fail(len(data.blinds))
+            self._apply_fail(data)
             if self.info.has_bus_stats:
-                data.diag = await self.client.read_registers(self.unit, True, IR_DIAG, IR_DIAG_COUNT_BUS)
+                count = IR_DIAG_COUNT_FAIL if self.info.has_fail else IR_DIAG_COUNT_BUS
+                data.diag = await self.client.read_registers(self.unit, True, IR_DIAG, count)
                 # gleich danach, ohne await dazwischen: passt genau zum gelesenen IR37
                 self._bus_update(data.info[5], data.diag, self.client.sent.get(self.unit, 0),
                                  self.client.timeouts.get(self.unit, 0))
@@ -584,5 +696,6 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
         teaching = any(b["teach"] for b in data.blinds)
         self.update_interval = SCAN_INTERVAL_MOVING if teaching else SCAN_INTERVAL
         self._track_blinds(data)
+        self._check_fail_count(data)
         self._update_backup(data)
         return data

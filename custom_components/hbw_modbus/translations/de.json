@@ -167,6 +167,9 @@
             "name": "Seit"
           }
         }
+      },
+      "fail_count": {
+        "name": "Notbetrieb ausgelöst"
       }
     },
     "number": {
@@ -190,6 +193,9 @@
       },
       "reference_after": {
         "name": "Referenzfahrt nach Zwischenfahrten"
+      },
+      "fail_minutes": {
+        "name": "Notbetrieb nach"
       }
     },
     "button": {
@@ -225,6 +231,22 @@
         "state": {
           "switch": "Schalter",
           "light": "Licht"
+        }
+      },
+      "fail_channel": {
+        "name": "Bei Ausfall",
+        "state": {
+          "nothing": "Nichts",
+          "on": "Einschalten",
+          "off": "Ausschalten"
+        }
+      },
+      "fail_blind": {
+        "name": "Bei Ausfall",
+        "state": {
+          "nothing": "Nichts",
+          "open": "Auffahren",
+          "close": "Zufahren"
         }
       }
     }

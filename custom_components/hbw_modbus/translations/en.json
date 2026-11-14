@@ -167,6 +167,9 @@
             "name": "Since"
           }
         }
+      },
+      "fail_count": {
+        "name": "Emergency mode triggered"
       }
     },
     "number": {
@@ -190,6 +193,9 @@
       },
       "reference_after": {
         "name": "Reference run after moves"
+      },
+      "fail_minutes": {
+        "name": "Emergency mode after"
       }
     },
     "button": {
@@ -225,6 +231,22 @@
         "state": {
           "switch": "Switch",
           "light": "Light"
+        }
+      },
+      "fail_channel": {
+        "name": "On outage",
+        "state": {
+          "nothing": "Nothing",
+          "on": "Turn on",
+          "off": "Turn off"
+        }
+      },
+      "fail_blind": {
+        "name": "On outage",
+        "state": {
+          "nothing": "Nothing",
+          "open": "Open",
+          "close": "Close"
         }
       }
     }

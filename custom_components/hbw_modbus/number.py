@@ -1,4 +1,5 @@
-"""Einstellungen je Rollladen: Fahrzeiten und Kennlinie (HR10n+2..8)."""
+"""Einstellungen je Rollladen: Fahrzeiten und Kennlinie (HR10n+2..8), am
+Modul die Wartezeit des Notbetriebs (HR9)."""
 
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import HbwConfigEntry
 from .client import ModbusError
+from .const import FAIL_MAX_MIN
 from .coordinator import HbwCoordinator
 from .entity import HbwEntity
 
@@ -55,9 +57,39 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: HbwConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data.coordinator
-    async_add_entities(
+    entities: list[NumberEntity] = [
         BlindParNumber(coordinator, n, d) for n in range(1, coordinator.blind_count + 1) for d in BLIND_PARS
-    )
+    ]
+    if coordinator.info.has_fail:
+        entities.append(HbwFailMinutes(coordinator))
+    async_add_entities(entities)
+
+
+class HbwFailMinutes(HbwEntity, NumberEntity):
+    """Notbetrieb: so viele Minuten ohne Anfrage von HA, dann schaltet das
+    Modul selbst (0 = aus). Im Modul gespeichert."""
+
+    _attr_translation_key = "fail_minutes"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_device_class = NumberDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_native_min_value = 0
+    _attr_native_max_value = FAIL_MAX_MIN
+    _attr_native_step = 1
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, coordinator: HbwCoordinator) -> None:
+        super().__init__(coordinator, "fail_minutes")
+
+    @property
+    def native_value(self) -> int | None:
+        return self.coordinator.data.fail_min
+
+    async def async_set_native_value(self, value: float) -> None:
+        try:
+            await self.coordinator.async_set_fail_min(int(value))
+        except ModbusError as err:
+            raise HomeAssistantError(f"Notbetrieb: {err}") from err
 
 
 class BlindParNumber(HbwEntity, NumberEntity):

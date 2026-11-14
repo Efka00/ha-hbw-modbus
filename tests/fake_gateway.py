@@ -31,6 +31,7 @@ class FakeBlind:
     teach: int = 0
     moves: int = 0
     par: list[int] = field(default_factory=lambda: [2000, 1900, 0, 0, 0, 10, 0])   # HR10n+2..8
+    fail: int = 0                 # HR10n+9 Notbetrieb: 0 nichts, 1 auf, 2 zu
 
     def command(self, v: int) -> bool:
         if v == 0:
@@ -64,10 +65,17 @@ class FakeModule:
     own: int = 0
     broken: int = 0
     new_id: int | None = None     # nach HR0 schreiben: ab der nächsten Anfrage gültig
+    fail_min: int = 30            # HR9 Notbetrieb
+    fail_count: int = 0           # IR39
 
     diag_from = 0x0108
     bus_from = 0x0111
+    fail_from = 0x0112
     info_count = 7
+
+    @property
+    def has_fail(self) -> bool:
+        return self.firmware >= self.fail_from
 
     def ir(self, a: int) -> int | None:
         info = [self.firmware, self.channels, self.hbw_address >> 16, self.hbw_address & 0xFFFF, 12, 0, 5]
@@ -83,30 +91,39 @@ class FakeModule:
             return self.diag[a - 30]
         if self.firmware >= self.bus_from and 36 <= a <= 38:
             return [self.frames, self.own, self.broken][a - 36] & 0xFFFF
+        if self.has_fail and a == 39:
+            return self.fail_count
         return None
 
     def blind_hr(self, a: int) -> int | None:
         n, r = divmod(a, 10)
-        if not 1 <= n <= len(self.blinds) or r > 8:
+        if not 1 <= n <= len(self.blinds) or r > (9 if self.has_fail else 8):
             return None
         b = self.blinds[n - 1]
-        return b.status if r == 0 else b.position if r == 1 else b.par[r - 2]
+        return b.status if r == 0 else b.position if r == 1 else b.fail if r == 9 else b.par[r - 2]
 
     def write_blind_hr(self, a: int, v: int) -> bool:
         n, r = divmod(a, 10)
-        if not 1 <= n <= len(self.blinds) or r > 8:
+        if not 1 <= n <= len(self.blinds) or r > (9 if self.has_fail else 8):
             return False
         b = self.blinds[n - 1]
         if r == 0:
             return b.command(v)
         if r == 1:
             return b.goto(v)
+        if r == 9:
+            if v > 2:
+                return False
+            b.fail = v
+            return True
         b.par[r - 2] = v
         return True
 
     def hr(self, a: int) -> int | None:
         if a == 0:
             return self.stored_id
+        if a == 9 and self.has_fail:
+            return self.fail_min
         return self.blind_hr(a) if a >= 10 else None
 
     def write_hr(self, a: int, v: int) -> bool:
@@ -114,6 +131,11 @@ class FakeModule:
             if not 1 <= v <= 247:
                 return False
             self.stored_id = self.new_id = v
+            return True
+        if a == 9 and self.has_fail:
+            if v > 1440:
+                return False
+            self.fail_min = v
             return True
         return self.write_blind_hr(a, v) if a >= 10 else False
 
@@ -135,6 +157,9 @@ class FakeSwModule(FakeModule):
     power_on: int = 1             # HR3 Einschaltverhalten
     blind_up: int = 0             # HR6 Richtungskanal an = auf
     timers: dict[int, int] = field(default_factory=dict)
+    fail_on: int = 0              # HR40
+    fail_off: int = 0             # HR41
+    fail_blind: int = 0           # HR19 (auch ohne Rollladen vorhanden)
 
     def __post_init__(self) -> None:
         if self.lock and not self.blinds:
@@ -157,6 +182,8 @@ class FakeSwModule(FakeModule):
                     self.blind_up, 0][a]
         if a == 8 and self.has_force:
             return self.force
+        if self.has_fail and a in (9, 19, 40, 41):
+            return {9: self.fail_min, 19: self.fail_blind, 40: self.fail_on, 41: self.fail_off}[a]
         if 20 <= a < 20 + self.channels:
             return self.timers.get(a - 20, 0)
         if 10 <= a < 20 and self.lock:
@@ -196,6 +223,18 @@ class FakeSwModule(FakeModule):
             self.force = v
             self.outputs |= v
             return True
+        if self.has_fail and a in (9, 19, 40, 41):
+            if (a == 9 and v > 1440) or (a == 19 and v > 2) or (a >= 40 and v >> self.channels):
+                return False
+            if a == 9:
+                self.fail_min = v
+            elif a == 19:
+                self.fail_blind = v
+            elif a == 40:
+                self.fail_on = v
+            else:
+                self.fail_off = v
+            return True
         if 20 <= a < 20 + self.channels:
             ch = a - 20
             if (self.lock >> ch) & 1:
@@ -228,6 +267,7 @@ class FakeBlModule(FakeModule):
 
     diag_from = 0x0105
     bus_from = 0x0107
+    fail_from = 0x0108
     info_count = 6
 
     def __post_init__(self) -> None:
@@ -249,6 +289,7 @@ class FakeS0Module(FakeModule):
 
     diag_from = 0
     bus_from = 0x0103
+    fail_from = 0x10000   # Zähler: kein Notbetrieb
 
     def ir(self, a: int) -> int | None:
         if a == 7:

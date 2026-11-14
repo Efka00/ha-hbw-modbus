@@ -181,6 +181,26 @@ auf dem Schaltmodul. Je Abfrage liest die Integration alle vier Rollläden
 mit einer Anfrage; die Einstellungen liest sie nur beim Start und nach
 einer Einlernfahrt, Änderungen aus HA übernimmt sie direkt.
 
+## Notbetrieb (ab Firmware HBW-MB-Sw v1.12 / HBW-MB-Bl v1.08)
+
+Ohne Home Assistant geht im Haus nichts, auch die Taster nicht. Fällt HA
+länger aus, schaltet jedes Modul deshalb selbst, was dafür eingestellt ist:
+
+- Am Modul: **Notbetrieb nach** (Minuten, Standard 30, 0 = aus). So lange
+  darf HA das Modul nicht abfragen, bevor es auslöst. HA fragt alle 5 s, ein
+  Neustart oder Update von HA bleibt weit darunter.
+- Je Kanal des Schaltmoduls: **Bei Ausfall** – Nichts, Einschalten oder
+  Ausschalten. „Dauer ein“ bleibt immer an.
+- Je Rollladen: **Bei Ausfall** – Nichts, Auffahren oder Zufahren.
+- Der Notbetrieb löst einmal aus, danach bleibt alles so, bis es jemand
+  ändert. Was er eingeschaltet hat, bleibt an, bis du es ausschaltest.
+- Kommt HA zurück, feuert für jedes ausgelöste Modul **einmal** das
+  Ereignis `hbw_modbus_alarm` mit `kind: emergency`. Zu quittieren gibt es
+  nichts. Der Diagnosesensor **Notbetrieb ausgelöst** zählt die Auslösungen
+  seit dem Start des Moduls.
+- Die Einstellungen stehen im Modul und in der Sicherung für den
+  Modultausch. HA liest sie einmal beim Start, danach kein Busverkehr dafür.
+
 ## Zählermodul (HBW-MB-S0)
 
 | Gerät | Geräte-Informationen | Entitäten |
@@ -249,7 +269,29 @@ einer Einlernfahrt, Änderungen aus HA übernimmt sie direkt.
   am selben Gateway (z. B. die Modbus-YAML von Home Assistant) melden dann
   aber Fehler. Am besten greift nur diese Integration auf das Gateway zu.
 
+## Modul tauschen
+
+HA sichert je Modul, was im Nano gespeichert ist: Invertierung,
+Einschaltverhalten, Rollladen-Kanäle, „Dauer ein“, Fahrzeiten und
+Einlernwerte, Notbetrieb, beim Zähler Entprellzeit und Speicherintervall –
+aus den normalen Abfragen, ohne zusätzlichen Busverkehr.
+
+Fällt ein Modul aus: neuen Nano mit aktueller Firmware flashen, anstecken,
+am Bus-Gerät **Neues Modul suchen**. Antwortet ein Modul derselben Art mit
+gleich vielen Kanälen gerade nicht, fragt HA „Ersatz für ein ausgefallenes
+Modul“ oder „Neues Modul: ID vergeben“. Beim Ersatz schreibt HA die
+Einstellungen ins neue Modul, prüft sie und vergibt die alte ID. Der
+Eintrag in HA bleibt derselbe, mit allen Entitäten, Namen und
+Automationen; Zählerstände schreibt HA ebenfalls zurück. Ist die Firmware
+des neuen Moduls älter als die des alten, schreibt HA nichts.
+
 ## Ausfälle und Störungen
+
+- Am Bus-Gerät zeigt der Sensor **Gateway**, ob das Gateway erreichbar ist:
+  Verbunden, Nicht erreichbar (keine TCP-Verbindung) oder Bus stumm
+  (Gateway erreichbar, aber seit 60 s antwortet kein Modul – RS485-Seite
+  prüfen). Hält ein Problem 2 Minuten an, gibt es **eine** Reparaturmeldung
+  für das Gateway; die Meldungen der einzelnen Module bleiben so lange aus.
 
 - Am Modulgerät zeigt der Diagnosesensor **Verbindung** (verbunden /
   getrennt), ob das Modul antwortet. Er bleibt auch bei einem Ausfall
@@ -278,8 +320,8 @@ einer Einlernfahrt, Änderungen aus HA übernimmt sie direkt.
   wird seit v0.11.1 automatisch wiederholt; die Zähler zeigen, wie oft das
   nötig war und auf welchem Weg es hakt.
 - Zu jeder Meldung und Entwarnung feuert das Ereignis `hbw_modbus_alarm`
-  mit `module`, `kind` (`offline`, `online`, `crc`, `crc_ok`) und
-  `message`. Eine Automation kann daraus eine Push-Nachricht machen:
+  mit `module`, `kind` (`offline`, `online`, `crc`, `crc_ok`,
+  `gateway_offline`, `gateway_online`, `emergency`) und `message`. Eine Automation kann daraus eine Push-Nachricht machen:
 
 ```yaml
 triggers:
@@ -295,8 +337,9 @@ actions:
 ## Tests
 
 ```bash
-uv venv .venv && uv pip install pytest-homeassistant-custom-component
-.venv/bin/pytest tests
+uv run --no-project --python 3.14 --with-requirements requirements_test.txt pytest -q --timeout=90
 ```
 
-Die Tests laufen gegen ein nachgebautes Gateway mit Schaltmodul.
+Die Tests laufen gegen ein nachgebautes Gateway mit Schalt-, Rollladen-
+und Zählermodulen. GitHub führt sie bei jedem Push aus, zusammen mit
+hassfest und der HACS-Prüfung.

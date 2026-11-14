@@ -2,7 +2,7 @@
 
 HA merkt sich je Modul, was im Nano gespeichert ist: Invertierung,
 Einschaltverhalten, Rollladen-Kanäle, „Dauer ein“, Fahrzeiten und
-Einlernwerte, beim Zähler Entprellzeit und Speicherintervall. Die Werte
+Einlernwerte, Notbetrieb, beim Zähler Entprellzeit und Speicherintervall. Die Werte
 kommen aus den normalen Abfragen (kein zusätzlicher Busverkehr); gespeichert
 wird nur, wenn sich etwas geändert hat.
 
@@ -24,7 +24,19 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .client import HbwModbusClient, ModbusError
-from .const import BLIND_PAR_COUNT, DOMAIN, HR_BLIND_PAR, HR_FORCE, KIND_BLIND, KIND_S0, KIND_SWITCH
+from .const import (
+    BLIND_PAR_COUNT,
+    DOMAIN,
+    FAIL_BLIND,
+    HR_BLIND_PAR,
+    HR_FAIL_MIN,
+    HR_FAIL_OFF,
+    HR_FAIL_ON,
+    HR_FORCE,
+    KIND_BLIND,
+    KIND_S0,
+    KIND_SWITCH,
+)
 
 # Schaltmodul: HR1 Invertierung, HR3 Einschaltverhalten, HR4..6 Rollladen-Kanäle
 SW_CONFIG = (1, 3, 4, 5, 6)
@@ -45,8 +57,10 @@ def collect(
     blind_par: list[list[int]],
     s0_config: list[int] | None,
     has_force: bool,
+    fail: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """Sicherung aus den zuletzt gelesenen Werten; None, solange etwas fehlt."""
+    """Sicherung aus den zuletzt gelesenen Werten; None, solange etwas fehlt.
+    fail: Notbetrieb (min, on, off, blind), wenn die Firmware ihn kann."""
     regs: dict[int, int] = {}
     if kind == KIND_SWITCH:
         if config is None:
@@ -65,6 +79,11 @@ def collect(
         if s0_config is None:
             return None
         regs.update(dict(zip(S0_CONFIG, s0_config)))
+    if fail is not None:
+        regs[HR_FAIL_MIN] = fail["min"]
+        regs.update({10 * n + FAIL_BLIND: v for n, v in enumerate(fail["blind"], 1)})
+        if kind == KIND_SWITCH:
+            regs[HR_FAIL_ON], regs[HR_FAIL_OFF] = fail["on"], fail["off"]
     return {
         "kind": kind,
         "channels": channels,

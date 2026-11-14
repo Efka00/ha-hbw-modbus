@@ -106,6 +106,21 @@ BUS_RATE_WINDOW = 3600  # s: Fehlerquote über die letzte Stunde
 
 RESET_CAUSES = ["unknown", "power_on", "external", "brownout", "watchdog"]
 
+# Notbetrieb (ab HBW-MB-Sw v1.12 / HBW-MB-Bl v1.08): Wartezeit HR9, Rollladen
+# HR10n+9, Schaltmodul Kanäle ein HR40 / aus HR41, Auslösungen IR39
+FW_FAIL_SW = 0x0112
+FW_FAIL_BL = 0x0108
+HR_FAIL_MIN = 9
+HR_FAIL_ON = 40
+HR_FAIL_OFF = 41
+FAIL_BLIND = 9          # HR10n+9
+IR_DIAG_COUNT_FAIL = 10   # IR30..39
+FAIL_MAX_MIN = 1440
+FAIL_NOTHING, FAIL_ON, FAIL_OFF = "nothing", "on", "off"
+FAIL_CHANNEL_OPTIONS = [FAIL_NOTHING, FAIL_ON, FAIL_OFF]
+FAIL_OPEN, FAIL_CLOSE = "open", "close"
+FAIL_BLIND_OPTIONS = [FAIL_NOTHING, FAIL_OPEN, FAIL_CLOSE]   # Registerwert 0, 1, 2
+
 SERVICE_TURN_ON_FOR = "turn_on_for"
 ATTR_SECONDS = "seconds"
 SERVICE_SET_METER_READING = "set_meter_reading"

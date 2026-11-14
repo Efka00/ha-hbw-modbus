@@ -47,6 +47,7 @@ class HbwSensorDescription(SensorEntityDescription):
     value_fn: Callable[[ModuleData], int | float | str | None]
     needs_diag: bool = False
     needs_bus: bool = False
+    needs_fail: bool = False
 
 
 def _uptime(d: ModuleData) -> int:
@@ -130,6 +131,14 @@ DIAG_SENSORS: tuple[HbwSensorDescription, ...] = (
         value_fn=lambda d: d.lost_responses,
     ),
     HbwSensorDescription(
+        key="fail_count",
+        translation_key="fail_count",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        needs_fail=True,
+        value_fn=lambda d: d.fail_count,
+    ),
+    HbwSensorDescription(
         key="supply_voltage",
         translation_key="supply_voltage",
         device_class=SensorDeviceClass.VOLTAGE,
@@ -156,6 +165,7 @@ async def async_setup_entry(
         for desc in DIAG_SENSORS
         if (coordinator.info.has_diag or not desc.needs_diag)
         and (coordinator.info.has_bus_stats or not desc.needs_bus)
+        and (coordinator.info.has_fail or not desc.needs_fail)
     ]
     entities += [HbwTeachSensor(coordinator, n) for n in range(1, coordinator.blind_count + 1)]
     if coordinator.info.kind == KIND_S0:

@@ -12,7 +12,8 @@
   lange aus.
 * Zu jeder Meldung und zur Entwarnung feuert das Ereignis `hbw_modbus_alarm`
   (Daten: module, kind = offline | online | crc | crc_ok | gateway_offline |
-  gateway_online, message). Eine Automation kann daraus eine Push-Nachricht
+  gateway_online | emergency, message). emergency: Notbetrieb eines Moduls
+  hat ausgelöst (einmal je Auslösung, ohne Reparaturmeldung). Eine Automation kann daraus eine Push-Nachricht
   machen.
 """
 
@@ -127,6 +128,16 @@ class ModuleHealth:
             since = _fmt(self.offline_since)
             self._issue("module_offline", {"since": since})
             self._fire("offline", f"{self._module} antwortet seit {since} nicht mehr.")
+
+    def emergency(self, minutes: int | None, times: int) -> None:
+        """Notbetrieb hat ausgelöst: einmal melden, nichts zu quittieren."""
+        wait = f"länger als {minutes} min " if minutes else ""
+        again = f" ({times}×)" if times > 1 else ""
+        self._fire(
+            "emergency",
+            f"{self._module}: Notbetrieb hat ausgelöst{again} – HA war {wait}nicht erreichbar. "
+            "Was er eingeschaltet hat, bleibt an.",
+        )
 
     def _check_crc(self, now: datetime, value: int) -> None:
         if self._crc and value < self._crc[-1][1]:
