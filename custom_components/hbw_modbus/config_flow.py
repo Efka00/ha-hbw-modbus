@@ -44,14 +44,13 @@ from .discovery import (
     CONF_FIRMWARE,
     CONF_HBW_ADDRESS,
     CONF_STORED_ID,
+    CTX_NEW_MODULE,
     bus_unique_id,
     known_units,
     module_unique_id,
     suggest_id,
 )
 from .entity import module_name
-
-CTX_NEW_MODULE = "hbw_new_module"
 
 
 def _id_selector(kind: str) -> selector.NumberSelector:

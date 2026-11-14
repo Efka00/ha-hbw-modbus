@@ -105,10 +105,11 @@
       "search_status": {
         "name": "Suche",
         "state": {
-          "idle": "Noch nicht gesucht",
+          "idle": "Bereit",
           "running": "Läuft",
           "nothing": "Nichts gefunden",
           "found": "Neues Modul gefunden",
+          "done": "Erledigt",
           "other": "Gefunden, nicht einrichtbar",
           "error": "Fehler"
         },

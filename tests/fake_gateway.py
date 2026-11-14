@@ -70,6 +70,7 @@ class FakeGateway:
         self.server: asyncio.base_events.Server | None = None
         self.port = 0
         self.requests = 0
+        self._writers: set[asyncio.StreamWriter] = set()
 
     async def start(self) -> None:
         self.server = await asyncio.start_server(self._client, "127.0.0.1", 0)
@@ -78,9 +79,12 @@ class FakeGateway:
     async def stop(self) -> None:
         if self.server:
             self.server.close()
+            for w in list(self._writers):   # sonst wartet wait_closed() auf HA
+                w.close()
             await self.server.wait_closed()
 
     async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._writers.add(writer)
         try:
             while True:
                 hdr = await reader.readexactly(7)
@@ -99,6 +103,7 @@ class FakeGateway:
         except (asyncio.IncompleteReadError, ConnectionError):
             pass
         finally:
+            self._writers.discard(writer)
             writer.close()
 
     @staticmethod

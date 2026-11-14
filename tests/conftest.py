@@ -14,7 +14,7 @@ def auto_enable_custom_integrations(enable_custom_integrations, hass):
 
 
 @pytest.fixture
-async def gateway():
+async def gateway(socket_enabled):
     gw = FakeGateway()
     gw.modules[3] = FakeSwModule()
     await gw.start()

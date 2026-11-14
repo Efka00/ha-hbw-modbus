@@ -105,10 +105,11 @@
       "search_status": {
         "name": "Search",
         "state": {
-          "idle": "Not searched yet",
+          "idle": "Ready",
           "running": "Running",
           "nothing": "Nothing found",
           "found": "New module found",
+          "done": "Done",
           "other": "Found, cannot be set up",
           "error": "Error"
         },

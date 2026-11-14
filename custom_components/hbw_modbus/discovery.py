@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 
@@ -32,8 +32,9 @@ from homeassistant.config_entries import (
     ConfigEntryState,
 )
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import discovery_flow
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .client import HbwModbusClient, ModbusError, ModbusExceptionResponse
@@ -57,15 +58,22 @@ CONF_STORED_ID = "stored_id"
 CONF_FIRMWARE = "firmware"
 CONF_CHANNELS = "channels"
 CONF_HBW_ADDRESS = "hbw_address"
+CTX_NEW_MODULE = "hbw_new_module"   # Kontext einer Rückfrage für ein Modul ohne ID (247)
 
 # Zustände des Sensors „Suche“ am Bus-Gerät
-STATUS_IDLE = "idle"          # seit dem Start von HA noch nicht gesucht
+STATUS_IDLE = "idle"          # bereit: noch nicht gesucht oder Meldung abgelaufen
 STATUS_RUNNING = "running"
 STATUS_NOTHING = "nothing"    # nichts Neues gefunden
 STATUS_FOUND = "found"        # mindestens ein neues Modul (Rückfrage offen)
+STATUS_DONE = "done"          # alle Rückfragen erledigt (eingerichtet oder ignoriert)
 STATUS_OTHER = "other"        # es hat sich etwas gemeldet, das HA nicht einrichten kann
 STATUS_ERROR = "error"
-STATUSES = [STATUS_IDLE, STATUS_RUNNING, STATUS_NOTHING, STATUS_FOUND, STATUS_OTHER, STATUS_ERROR]
+STATUSES = [STATUS_IDLE, STATUS_RUNNING, STATUS_NOTHING, STATUS_FOUND, STATUS_DONE, STATUS_OTHER, STATUS_ERROR]
+
+# „Neues Modul gefunden“ bleibt stehen, bis die Rückfragen erledigt sind
+# (HA-intern geprüft, kein Busverkehr), höchstens aber FOUND_TIMEOUT.
+FOUND_CHECK = timedelta(seconds=15)
+FOUND_TIMEOUT = timedelta(minutes=30)
 
 
 def module_unique_id(host: str, port: int, unit: int) -> str:
@@ -127,6 +135,9 @@ class HbwBus:
         self.result: str | None = None     # Ergebnis der letzten Suche
         self.last_search: datetime | None = None
         self._listeners: list[Callable[[], None]] = []
+        self._watch: list[Callable[[], None]] = []   # Abmelder der Beobachtung „gefunden“
+        self._configured_before: set[int] = set()
+        entry.async_on_unload(self._stop_watch)
 
     def add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
         self._listeners.append(update)
@@ -143,13 +154,62 @@ class HbwBus:
     def busy(self) -> bool:
         return self._task is not None and not self._task.done()
 
+    @property
+    def _notification_id(self) -> str:
+        return f"{DOMAIN}_search_{self.entry.entry_id}"
+
     def _notify(self, message: str) -> None:
         persistent_notification.async_create(
-            self.hass,
-            message,
-            title=f"{self.entry.title}: Suche",
-            notification_id=f"{DOMAIN}_search_{self.entry.entry_id}",
+            self.hass, message, title=f"{self.entry.title}: Suche", notification_id=self._notification_id
         )
+
+    # ------------------------------------------- „gefunden“ wieder abräumen
+
+    def open_flows(self) -> int:
+        """Offene Rückfragen „Neues Gerät gefunden“ für Module an diesem Bus."""
+        prefix, key = f"{self.host}:{self.port}:", f"{self.host}:{self.port}"
+        return sum(
+            1
+            for flow in self.hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+            if (flow["context"].get("unique_id") or "").startswith(prefix)
+            or flow["context"].get(CTX_NEW_MODULE) == key
+        )
+
+    def _start_watch(self) -> None:
+        self._stop_watch()
+        self._watch = [
+            async_track_time_interval(self.hass, self._check_found, FOUND_CHECK),
+            async_call_later(self.hass, FOUND_TIMEOUT, self._found_timeout),
+        ]
+
+    def _stop_watch(self) -> None:
+        for unsub in self._watch:
+            unsub()
+        self._watch = []
+
+    @callback
+    def _check_found(self, _now: datetime | None = None) -> None:
+        if self.status != STATUS_FOUND:
+            self._stop_watch()
+            return
+        if self.open_flows():
+            return
+        self._stop_watch()
+        added = sorted(known_units(self.hass, self.host, self.port, False) - self._configured_before)
+        result = (
+            f"Erledigt: eingerichtet {', '.join(f'ID {u}' for u in added)}."
+            if added
+            else "Erledigt: Rückfrage geschlossen, nichts eingerichtet."
+        )
+        persistent_notification.async_dismiss(self.hass, self._notification_id)
+        self._set(STATUS_DONE, result=result)
+
+    @callback
+    def _found_timeout(self, _now: datetime) -> None:
+        self._stop_watch()
+        if self.status == STATUS_FOUND:
+            persistent_notification.async_dismiss(self.hass, self._notification_id)
+            self._set(STATUS_IDLE)
 
     def start(self, full: bool) -> None:
         """Suche im Hintergrund starten (der Knopf kehrt sofort zurück)."""
@@ -170,7 +230,9 @@ class HbwBus:
             self._notify(f"Suche fehlgeschlagen: {err}")
 
     async def _run(self, full: bool) -> None:
+        self._stop_watch()
         configured = known_units(self.hass, self.host, self.port, False)
+        self._configured_before = configured
         ignored = known_units(self.hass, self.host, self.port, True)
         if full:
             units = [u for u in SCAN_IDS if u not in configured]
@@ -229,6 +291,8 @@ class HbwBus:
         status = STATUS_FOUND if found_new else STATUS_OTHER if lines else STATUS_NOTHING
         self._set(status, result=message)
         self._notify(message)
+        if status == STATUS_FOUND:
+            self._start_watch()
 
     def _start_flow(self, unit: int, info: ModuleInfo, stored: int | None) -> None:
         data: dict[str, Any] = {
