@@ -23,10 +23,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import HbwConfigEntry, is_bus
 from .discovery import STATUSES, HbwBus
-from .client import ModbusError
+from .client import GATEWAY_STATES, ModbusError
 from .const import (
     CONF_MIN_POWER,
     CONF_PULSES_PER_KWH,
@@ -147,7 +148,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: HbwConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     if is_bus(entry):
-        async_add_entities([HbwSearchStatus(entry.runtime_data)])
+        async_add_entities([HbwSearchStatus(entry.runtime_data), HbwGatewayStatus(entry.runtime_data)])
         return
     coordinator = entry.runtime_data.coordinator
     entities: list[SensorEntity] = [
@@ -272,6 +273,35 @@ class HbwSearchStatus(SensorEntity):
             "result": self._bus.result,
             "last_search": self._bus.last_search.isoformat() if self._bus.last_search else None,
         }
+
+
+class HbwGatewayStatus(SensorEntity):
+    """Zustand des Gateways am Bus-Gerät: verbunden, nicht erreichbar oder
+    Bus stumm (Gateway erreichbar, aber kein Modul antwortet). Abgeleitet aus
+    den normalen Abfragen der Module, ohne eigene Anfragen."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "gateway"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = GATEWAY_STATES
+    _attr_should_poll = False
+
+    def __init__(self, bus: HbwBus) -> None:
+        self._client = bus.client
+        self._attr_unique_id = f"{bus.entry.unique_id}_gateway"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, bus.entry.unique_id)})
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self._client.add_listener(self.async_write_ha_state))
+
+    @property
+    def native_value(self) -> str | None:
+        return self._client.gateway_status
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None]:
+        since = self._client.gateway_since
+        return {"since": dt_util.utc_from_timestamp(since).isoformat() if since else None}
 
 
 # Einlernschritt der Firmware (IR22..) -> Zustand des Sensors „Einlernen“

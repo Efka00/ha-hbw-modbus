@@ -154,6 +154,19 @@
           "wait_bottom": "Fährt zu – Marker: unten angekommen",
           "done": "Fertig, Zeiten gespeichert"
         }
+      },
+      "gateway": {
+        "name": "Gateway",
+        "state": {
+          "ok": "Verbunden",
+          "unreachable": "Nicht erreichbar",
+          "bus_silent": "Bus stumm"
+        },
+        "state_attributes": {
+          "since": {
+            "name": "Seit"
+          }
+        }
       }
     },
     "number": {
@@ -258,6 +271,14 @@
     "bus_errors": {
       "title": "Busstörungen bei {module}",
       "description": "{module} hat in der letzten Stunde {count} gestörte Telegramme empfangen (CRC-Fehler). Bitte Abschlusswiderstände, Verdrahtung und Störquellen prüfen. Die Meldung verschwindet nach einer ruhigen Stunde von selbst."
+    },
+    "gateway_unreachable": {
+      "title": "Gateway {gateway} nicht erreichbar",
+      "description": "Das Gateway {gateway} ist seit {since} nicht erreichbar, damit antwortet kein Modul an diesem Bus. Bitte Strom und Netzwerk des Gateways prüfen. Die Meldungen der einzelnen Module bleiben so lange aus. Die Meldung verschwindet von selbst, sobald das Gateway wieder erreichbar ist."
+    },
+    "gateway_bus_silent": {
+      "title": "Bus an {gateway} stumm",
+      "description": "Das Gateway {gateway} ist erreichbar, aber seit {since} antwortet am Bus kein Modul mehr. Bitte Busspannung, RS485-Leitung und die serielle Seite des Gateways prüfen. Die Meldungen der einzelnen Module bleiben so lange aus. Die Meldung verschwindet von selbst, sobald wieder ein Modul antwortet."
     }
   }
 }

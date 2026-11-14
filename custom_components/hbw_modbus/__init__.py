@@ -24,7 +24,7 @@ from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
-from .client import HbwModbusClient, ModbusError
+from .client import GW_OK, HbwModbusClient, ModbusError
 from .const import (
     ATTR_SECONDS,
     ATTR_VALUE,
@@ -41,7 +41,7 @@ from .const import (
 )
 from .channel import HbwChannel, channel_type, free_channels
 from .coordinator import HbwCoordinator, probe_module
-from .health import forget_health, module_health
+from .health import GatewayMonitor, forget_health, module_health
 from .discovery import HbwBus, bus_unique_id
 from .entity import blind_identifier, channel_identifier, module_device_info
 
@@ -121,7 +121,8 @@ def acquire_client(hass: HomeAssistant, host: str, port: int) -> HbwModbusClient
     key = f"{host}:{port}"
     slot = _gateways(hass).get(key)
     if slot is None:
-        slot = _gateways(hass)[key] = [HbwModbusClient(host, port, DEFAULT_TIMEOUT), 0]
+        client = HbwModbusClient(host, port, DEFAULT_TIMEOUT)
+        slot = _gateways(hass)[key] = [client, 0, GatewayMonitor(hass, client)]
     slot[1] += 1
     return slot[0]
 
@@ -134,6 +135,7 @@ async def release_client(hass: HomeAssistant, client: HbwModbusClient) -> None:
     slot[1] -= 1
     if slot[1] <= 0:
         del _gateways(hass)[key]
+        slot[2].stop()
         await client.close()
 
 
@@ -175,7 +177,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: HbwConfigEntry) -> bool:
         info = await probe_module(client, unit, quick=True)
     except Exception as err:   # noqa: BLE001 – jeder Fehler hier: später erneut versuchen
         await release_client(hass, client)
-        module_health(hass, entry).failure()   # fehlt das Modul schon beim Start
+        # fehlt das Modul schon beim Start (Gateway-Ausfall meldet das Gateway)
+        module_health(hass, entry).failure(client.gateway_status not in (None, GW_OK))
         if not isinstance(err, ModbusError):
             _LOGGER.warning("ID %s: unerwarteter Fehler beim Erkennen (%r), neuer Versuch folgt", unit, err)
         raise ConfigEntryNotReady(str(err)) from err

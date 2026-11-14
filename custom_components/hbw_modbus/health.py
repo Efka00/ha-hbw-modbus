@@ -6,9 +6,14 @@
 * Steigt der CRC-Fehlerzähler des Moduls innerhalb einer Stunde um mehr als
   CRC_ALARM, entsteht eine zweite Meldung; sie verschwindet, wenn es eine
   Stunde lang ruhiger war.
+* Ist das Gateway selbst nicht erreichbar oder antwortet am Bus gar kein
+  Modul mehr (GatewayMonitor), gibt es nach OFFLINE_ALARM eine einzige
+  Meldung für das Gateway; die Meldungen der einzelnen Module bleiben so
+  lange aus.
 * Zu jeder Meldung und zur Entwarnung feuert das Ereignis `hbw_modbus_alarm`
-  (Daten: module, kind = offline | online | crc | crc_ok, message). Eine
-  Automation kann daraus eine Push-Nachricht machen.
+  (Daten: module, kind = offline | online | crc | crc_ok | gateway_offline |
+  gateway_online, message). Eine Automation kann daraus eine Push-Nachricht
+  machen.
 """
 
 from __future__ import annotations
@@ -17,16 +22,23 @@ from collections import deque
 from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 
+from .client import GW_OK, HbwModbusClient
 from .const import DOMAIN
 
 EVENT_ALARM = f"{DOMAIN}_alarm"
 OFFLINE_ALARM = timedelta(minutes=2)
 CRC_WINDOW = timedelta(hours=1)
 CRC_ALARM = 10
+
+
+def _utcnow() -> datetime:
+    """Jetzt (in Tests vorstellbar)."""
+    return dt_util.utcnow()
 
 
 def _fmt(t: datetime) -> str:
@@ -88,7 +100,7 @@ class ModuleHealth:
         )
 
     def success(self, crc_errors: int) -> None:
-        now = dt_util.utcnow()
+        now = _utcnow()
         if self._first:
             # Meldungen aus der Zeit vor dem Neuladen aufräumen
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id("module_offline"))
@@ -102,10 +114,14 @@ class ModuleHealth:
         self.last_seen = now
         self._check_crc(now, crc_errors)
 
-    def failure(self) -> None:
-        now = dt_util.utcnow()
+    def failure(self, gateway_problem: bool = False) -> None:
+        """gateway_problem: Gateway nicht erreichbar oder Bus stumm – dann meldet
+        das Gateway (GatewayMonitor), nicht jedes Modul einzeln."""
+        now = _utcnow()
         if self.offline_since is None:
             self.offline_since = self.last_seen or now
+        if gateway_problem:
+            return
         if not self._offline_reported and now - self.offline_since >= OFFLINE_ALARM:
             self._offline_reported = True
             since = _fmt(self.offline_since)
@@ -131,3 +147,81 @@ class ModuleHealth:
     def remove(self) -> None:
         ir.async_delete_issue(self.hass, DOMAIN, self._issue_id("module_offline"))
         ir.async_delete_issue(self.hass, DOMAIN, self._issue_id("bus_errors"))
+
+
+class GatewayMonitor:
+    """Eine Meldung für das Gateway statt einer je Modul. Folgt dem Zustand,
+    den der Client aus dem normalen Verkehr ableitet (kein Busverkehr)."""
+
+    def __init__(self, hass: HomeAssistant, client: HbwModbusClient) -> None:
+        self.hass = hass
+        self.client = client
+        self._reported: str | None = None   # gemeldeter Zustand (Issue offen)
+        self._unsub_timer = None
+        self._unsub = client.add_listener(self._changed)
+
+    @property
+    def _name(self) -> str:
+        return f"{self.client.host}:{self.client.port}"
+
+    def _issue_id(self, status: str) -> str:
+        return f"gateway_{status}_{self.client.host}_{self.client.port}"
+
+    @callback
+    def _changed(self) -> None:
+        status = self.client.gateway_status
+        if status in (None, GW_OK):
+            self._cancel_timer()
+            if self._reported is not None:
+                ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(self._reported))
+                self.hass.bus.async_fire(
+                    EVENT_ALARM,
+                    {"module": self._name, "kind": "gateway_online", "message": f"Gateway {self._name} wieder in Ordnung."},
+                )
+                self._reported = None
+            return
+        if self._reported is not None:
+            if status != self._reported:   # z. B. erreichbar, aber Bus noch stumm
+                ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(self._reported))
+                self._report(status)
+            return
+        if self._unsub_timer is None:
+            self._unsub_timer = async_call_later(self.hass, OFFLINE_ALARM, self._alarm)
+
+    @callback
+    def _alarm(self, _now: datetime) -> None:
+        self._unsub_timer = None
+        status = self.client.gateway_status
+        if status not in (None, GW_OK) and self._reported is None:
+            self._report(status)
+
+    def _report(self, status: str) -> None:
+        self._reported = status
+        since = _fmt(dt_util.utc_from_timestamp(self.client.gateway_since or _utcnow().timestamp()))
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            self._issue_id(status),
+            is_fixable=False,
+            is_persistent=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=f"gateway_{status}",
+            translation_placeholders={"gateway": self._name, "since": since},
+        )
+        text = "nicht erreichbar" if status == "unreachable" else "erreichbar, aber kein Modul antwortet"
+        self.hass.bus.async_fire(
+            EVENT_ALARM,
+            {"module": self._name, "kind": "gateway_offline", "message": f"Gateway {self._name} seit {since} {text}."},
+        )
+
+    def _cancel_timer(self) -> None:
+        if self._unsub_timer is not None:
+            self._unsub_timer()
+            self._unsub_timer = None
+
+    def stop(self) -> None:
+        self._cancel_timer()
+        self._unsub()
+        if self._reported is not None:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(self._reported))
+            self._reported = None

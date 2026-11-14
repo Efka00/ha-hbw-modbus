@@ -15,13 +15,20 @@ ungestört durch, so trifft der Befehl nicht auf einen belegten Bus.
 Befehle warten kürzer als Abfragen (WRITE_TIMEOUTS). Bleibt die Antwort aus,
 wird ein Befehl, der doppelt ausgeführt dasselbe Ergebnis hat (retry=True),
 einmal wiederholt.
+
+Zustand des Gateways (ohne eigene Anfragen, nur aus dem normalen Verkehr):
+„ok“, „unreachable“ (TCP-Verbindung nicht möglich) oder „bus_silent“ (TCP
+steht, aber seit BUS_SILENT_AFTER antwortet kein Modul, obwohl gefragt
+wurde – RS485-Seite prüfen). Listener erfahren nur Wechsel.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import logging
 import struct
+import time
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +47,19 @@ RETRY_PAUSE = 0.05
 # So lange darf eine Abfrage auf ihre Antwort warten, bevor ein Befehl sie
 # unterbricht.
 PREEMPT_GRACE = 0.2
+# So lange ohne jede Antwort eines Moduls (bei ausgebliebenen Antworten) gilt
+# der Bus als stumm.
+BUS_SILENT_AFTER = 60.0
+
+GW_OK = "ok"
+GW_UNREACHABLE = "unreachable"
+GW_BUS_SILENT = "bus_silent"
+GATEWAY_STATES = [GW_OK, GW_UNREACHABLE, GW_BUS_SILENT]
+
+
+def _clock() -> float:
+    """Uhrzeit für den Gateway-Zustand (in Tests vorstellbar)."""
+    return time.time()
 
 
 class ModbusError(Exception):
@@ -83,6 +103,42 @@ class HbwModbusClient:
         # Koordinator vergleicht sie mit dem Anfragezähler des Moduls (IR37).
         self.sent: dict[int, int] = {}
         self.timeouts: dict[int, int] = {}
+        # Zustand des Gateways
+        self._tcp_ok: bool | None = None
+        self._last_answer: float | None = None   # _clock() der letzten Antwort eines Moduls
+        self._missed = 0                          # ausgebliebene Antworten seitdem
+        self.gateway_status: str | None = None    # None = noch nichts versucht
+        self.gateway_since: float | None = None   # _clock() des letzten Wechsels
+        self._listeners: list[Callable[[], None]] = []
+
+    def add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
+        """update() wird bei jedem Wechsel des Gateway-Zustands aufgerufen."""
+        self._listeners.append(update)
+        return lambda: self._listeners.remove(update)
+
+    def _evaluate(self) -> None:
+        if self._tcp_ok is None:
+            return
+        if not self._tcp_ok:
+            status = GW_UNREACHABLE
+        elif self._missed and (
+            self._last_answer is None or _clock() - self._last_answer >= BUS_SILENT_AFTER
+        ):
+            status = GW_BUS_SILENT
+        else:
+            status = GW_OK
+        if status != self.gateway_status:
+            if self.gateway_status is not None or status != GW_OK:
+                _LOGGER.info("Gateway %s:%s: %s -> %s", self.host, self.port, self.gateway_status, status)
+            self.gateway_status, self.gateway_since = status, _clock()
+            for update in list(self._listeners):
+                update()
+
+    def _answered(self) -> None:
+        self._last_answer = _clock()
+        if self._missed or self.gateway_status != GW_OK:
+            self._missed = 0
+            self._evaluate()
 
     async def close(self) -> None:
         """Verbindung schließen."""
@@ -160,6 +216,10 @@ class HbwModbusClient:
                 return await self._transact(unit, pdu, timeout, preemptible)
             except asyncio.TimeoutError as err:
                 self.timeouts[unit] = self.timeouts.get(unit, 0) + 1
+                self._missed += 1
+                if self._last_answer is None:
+                    self._last_answer = _clock()   # Frist beginnt mit der ersten Anfrage
+                self._evaluate()
                 if not ((probe or command) and self._clean and self._writer is not None):
                     await self._close()
                 last = err
@@ -223,9 +283,20 @@ class HbwModbusClient:
         loop = asyncio.get_running_loop()
         if self._writer is None:
             self._clean = True
-            self._reader, self._writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port), self.timeout
-            )
+            try:
+                self._reader, self._writer = await asyncio.wait_for(
+                    asyncio.open_connection(self.host, self.port), self.timeout
+                )
+            except (OSError, asyncio.TimeoutError) as err:
+                # nicht als ausgebliebene Antwort des Moduls zählen
+                self._tcp_ok = False
+                self._evaluate()
+                raise OSError(f"Gateway nicht erreichbar: {type(err).__name__} {err}") from err
+            if not self._tcp_ok:
+                if self._tcp_ok is False:   # Gateway wieder da: Frist für „stumm“ neu
+                    self._missed, self._last_answer = 0, _clock()
+                self._tcp_ok = True
+                self._evaluate()
         assert self._reader is not None
         self._tid = (self._tid % 0xFFFF) + 1
         tid = self._tid
@@ -245,6 +316,7 @@ class HbwModbusClient:
             if rtid != tid or runit != unit or (body[0] & 0x7F) != pdu[0]:
                 _LOGGER.debug("Fremde Antwort verworfen: tid %s, ID %s", rtid, runit)
                 continue
+            self._answered()
             if body[0] & 0x80:
                 raise ModbusExceptionResponse(body[1] if len(body) > 1 else 0)
             return body

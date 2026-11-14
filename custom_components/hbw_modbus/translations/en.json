@@ -154,6 +154,19 @@
           "wait_bottom": "Closing – marker: fully closed",
           "done": "Done, times saved"
         }
+      },
+      "gateway": {
+        "name": "Gateway",
+        "state": {
+          "ok": "Connected",
+          "unreachable": "Unreachable",
+          "bus_silent": "Bus silent"
+        },
+        "state_attributes": {
+          "since": {
+            "name": "Since"
+          }
+        }
       }
     },
     "number": {
@@ -258,6 +271,14 @@
     "bus_errors": {
       "title": "Bus errors at {module}",
       "description": "{module} received {count} corrupted telegrams (CRC errors) within the last hour. Check termination, wiring and interference. This message disappears after a quiet hour."
+    },
+    "gateway_unreachable": {
+      "title": "Gateway {gateway} unreachable",
+      "description": "The gateway {gateway} has been unreachable since {since}, so no module on this bus answers. Please check power and network of the gateway. Alerts for the individual modules are suppressed meanwhile. This alert disappears once the gateway is reachable again."
+    },
+    "gateway_bus_silent": {
+      "title": "Bus at {gateway} silent",
+      "description": "The gateway {gateway} is reachable, but no module on the bus has answered since {since}. Please check bus power, the RS485 line and the serial side of the gateway. Alerts for the individual modules are suppressed meanwhile. This alert disappears once a module answers again."
     }
   }
 }

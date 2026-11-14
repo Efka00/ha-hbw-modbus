@@ -297,8 +297,9 @@ class FakeGateway:
         self.requests = 0
         self._writers: set[asyncio.StreamWriter] = set()
 
-    async def start(self) -> None:
-        self.server = await asyncio.start_server(self._client, "127.0.0.1", 0)
+    async def start(self, port: int = 0) -> None:
+        """port: nach stop() wieder unter demselben Port starten."""
+        self.server = await asyncio.start_server(self._client, "127.0.0.1", port, reuse_address=True)
         self.port = self.server.sockets[0].getsockname()[1]
 
     async def stop(self) -> None:

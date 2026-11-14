@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from . import backup as bk
 from .blindcalc import POS_MAX, BlindCurve
-from .client import HbwModbusClient, ModbusConnectionError, ModbusError, ModbusExceptionResponse
+from .client import GW_OK, HbwModbusClient, ModbusConnectionError, ModbusError, ModbusExceptionResponse
 from .health import module_health
 from .const import (
     DOMAIN,
@@ -571,7 +571,7 @@ class HbwCoordinator(DataUpdateCoordinator[ModuleData]):
             self._offline = True
             self._bus_prev = None   # Ausfall gehört nicht in die Busstatistik
             self.update_interval = OFFLINE_INTERVAL
-            self.health.failure()
+            self.health.failure(self.client.gateway_status not in (None, GW_OK))
             raise UpdateFailed(str(err)) from err
         except ModbusError as err:
             raise UpdateFailed(str(err)) from err
